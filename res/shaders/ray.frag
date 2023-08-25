@@ -69,9 +69,9 @@ float smooth_int(float d1, float d2, float k)
 }
 float scene(in vec3 p)
 {
-    float box = sdf_box(p, vec3(0.7 - 0.25)) - 0.25;
+    float box = sdf_box(p, vec3(0.7 - 0.15)) - 0.15;
     float sphere1 = sdf_sphere(p, vec3(0.0), 0.9);
-    float sphere = sdf_sphere(p+0.5, vec3(0.0), 1.0);
+    float sphere = sdf_sphere(p-0.5, vec3(0.0), 1.0);
 
     //return max(box, -sphere);
     return smooth_union(smooth_int(box, sphere1, 0.05), sphere, u_fillet);
@@ -208,6 +208,7 @@ void main()
     float dist = ray_march(cam.pos, cam.ray).dist;
     float near = 0.01;
     float far = 100.0;
+    //distance for gl_frag depth needs to be calculated orthographically (not really but the rays need to go from the hit point to the uv)
     o_color = vec4((dep(dist, near, far)).xxx, 1.0);
     gl_FragDepth = dep(dist, near, far);
     //gl_FragDepth = 0.999;

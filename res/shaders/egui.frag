@@ -5,13 +5,13 @@ in vec2 o_pos;
 in vec2 o_uv;
 in vec4 o_col;
 
-uniform sampler2D fonts;
+uniform sampler2D fonts[2];
 
 void main()
 {
-    vec4 col = texture(fonts, o_uv);
+    vec4 col = texture(fonts[0], o_uv);
     if (col.a < 0.01) {
-        //discard;
+        discard;
     }
     if (o_col.r < 0.01) {
         //discard;

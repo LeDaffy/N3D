@@ -1,6 +1,8 @@
 use crate::{
     camera::Camera,
     input::{ElementState, Input, VirtualKeyCode},
+    node_graph,
+    ray_marcher::RayMarcher,
     renderer::{
         self,
         ebo::EBO,
@@ -12,15 +14,14 @@ use crate::{
         vbo::VBO,
         vert::Vert,
     },
-    ray_marcher::RayMarcher,
+    sdf::SDFBuilder,
     window::Window,
-    node_graph,
 };
-use nalgebra_glm;
 use egui::{self, Id};
 use egui_winit;
 use gl::{self};
 use glutin::surface::GlSurface;
+use nalgebra_glm;
 use winit::{
     self,
     event::{Event, WindowEvent},
@@ -54,7 +55,10 @@ pub struct EngineState {
 }
 impl EngineState {
     pub fn new(window: &Window) -> Self {
-        let resolution = [window.window.inner_size().width as f32, window.window.inner_size().width as f32];
+        let resolution = [
+            window.window.inner_size().width as f32,
+            window.window.inner_size().width as f32,
+        ];
         Self {
             graph: node_graph::NodeGraphExample::new(),
             input: Input::new(),
@@ -82,14 +86,64 @@ impl EngineState {
         }
     }
     pub fn setup(&mut self) {
-        self.camera.persp = nalgebra_glm::perspective_rh_no(self.resolution[0]/self.resolution[1], self.camera.fov.to_radians(), 0.01, 100.0);
+        let sdf = SDFBuilder::new()
+            .op_new(SDFBuilder::p_box::<String>(None, [0.4, 1.5, 0.5], 0.05))
+            .op_diff_smooth(
+                SDFBuilder::p_cylinder(
+                    Some(SDFBuilder::rotate::<String>(None, [45.0, 0.0, 0.0])),
+                    2.0,
+                    0.25,
+                    0.05,
+                ),
+                0.05,
+            )
+            .op_diff_smooth(
+                SDFBuilder::p_box(
+                    Some(SDFBuilder::translate(
+                        Some(SDFBuilder::rotate::<String>(None, [45.0, 45.0, 0.0])),
+                        [0.5, 0.5, 0.5],
+                    )),
+                    [0.5, 0.5, 0.5],
+                    0.05,
+                ),
+                0.05,
+            )
+            .op_union_smooth(
+                SDFBuilder::p_sphere(
+                    Some(SDFBuilder::translate::<String>(None, [0.5, -0.5, -0.35])),
+                    0.5,
+                ),
+                0.25,
+            )
+            .build();
+        self.ray_marcher.shader =
+            Shader::new(std::include_str!("../res/shaders/ray.vert"), sdf.as_str());
+        println!("=============");
+        println!("{}", sdf);
+        println!("=============");
+        self.camera.persp = nalgebra_glm::perspective_rh_no(
+            self.resolution[0] / self.resolution[1],
+            self.camera.fov.to_radians(),
+            0.01,
+            100.0,
+        );
         self.ray_marcher.matcap.gen();
         self.ray_marcher.matcap.set_unit(gl::TEXTURE15);
         self.ray_marcher.matcap.bind().unwrap();
         self.ray_marcher.shader.enable();
-        self.ray_marcher.shader.uniform_f32("u_cam_zoom", (self.camera.pos - self.camera.look_at).magnitude());
-        self.ray_marcher.shader.uniform_vec2("u_resolution", self.resolution[0], self.resolution[1]);
-        self.ray_marcher.shader.uniform_vec3v("u_cam_translation", &(self.camera.pos - self.camera.look_at));
+        self.ray_marcher.shader.uniform_f32(
+            "u_cam_zoom",
+            (self.camera.pos - self.camera.look_at).magnitude(),
+        );
+        self.ray_marcher.shader.uniform_vec2(
+            "u_resolution",
+            self.resolution[0],
+            self.resolution[1],
+        );
+        self.ray_marcher.shader.uniform_vec3v(
+            "u_cam_translation",
+            &(self.camera.pos - self.camera.look_at),
+        );
         self.ray_marcher.shader.uniform_f32("u_fillet", self.fillet);
 
         self.default_texture.gen();
@@ -176,7 +230,10 @@ impl EngineState {
                 self.camera.zoom(y / 10.0);
                 self.ray_marcher.zoom += y / 10.0;
                 self.ray_marcher.shader.enable();
-                self.ray_marcher.shader.uniform_f32("u_cam_zoom", (self.camera.pos - self.camera.look_at).magnitude());
+                self.ray_marcher.shader.uniform_f32(
+                    "u_cam_zoom",
+                    (self.camera.pos - self.camera.look_at).magnitude(),
+                );
             }
         }
         if self.input.keys.pressed(winit::event::VirtualKeyCode::C)
@@ -197,22 +254,44 @@ impl EngineState {
         }
     }
     pub fn draw(&mut self) {
-        self.camera.persp = nalgebra_glm::perspective_rh_no(self.resolution[0]/self.resolution[1], self.camera.fov.to_radians(), 0.01, 100.0);
+        self.camera.persp = nalgebra_glm::perspective_rh_no(
+            self.resolution[0] / self.resolution[1],
+            self.camera.fov.to_radians(),
+            0.01,
+            100.0,
+        );
         //render ray march
         self.ray_marcher.shader.enable();
-        self.ray_marcher.shader.uniform_mat3("u_cam_rot", &self.camera.rot);
-        self.ray_marcher.shader.uniform_f32("u_time", self.itime.elapsed().unwrap().as_secs_f32());
-        self.ray_marcher.shader.uniform_f32("u_fov", self.camera.fov);
+        self.ray_marcher
+            .shader
+            .uniform_mat3("u_cam_rot", &self.camera.rot);
+        self.ray_marcher
+            .shader
+            .uniform_f32("u_time", self.itime.elapsed().unwrap().as_secs_f32());
+        self.ray_marcher
+            .shader
+            .uniform_f32("u_fov", self.camera.fov);
         self.ray_marcher.shader.uniform_f32("u_fillet", self.fillet);
-        self.ray_marcher.shader.uniform_mat4("view", &self.camera.view());
-        self.ray_marcher.shader.uniform_mat4("persp", &self.camera.persp);
-        self.ray_marcher.shader.uniform_vec3v("u_cam_translation", &(self.camera.look_at - nalgebra::Point3::new(0.0, 0.0, 0.0)));
+        self.ray_marcher
+            .shader
+            .uniform_mat4("view", &self.camera.view());
+        self.ray_marcher
+            .shader
+            .uniform_mat4("persp", &self.camera.persp);
+        self.ray_marcher.shader.uniform_vec3v(
+            "u_cam_translation",
+            &(self.camera.look_at - nalgebra::Point3::new(0.0, 0.0, 0.0)),
+        );
         Texture::set_active_unit(gl::TEXTURE15);
         self.ray_marcher.matcap.bind().unwrap();
         self.ray_marcher.shader.uniform_tex("u_matcap", 15);
         //unsafe { gl::Disable(gl::DEPTH_TEST); }
-        unsafe { gl::Enable(gl::DEPTH_TEST); }
-        unsafe { gl::DepthMask(gl::TRUE); }
+        unsafe {
+            gl::Enable(gl::DEPTH_TEST);
+        }
+        unsafe {
+            gl::DepthMask(gl::TRUE);
+        }
         renderer::render_mesh(&self.ray_marcher.mesh);
         //unsafe { gl::DepthMask(gl::TRUE); }
         //unsafe { gl::Enable(gl::DEPTH_TEST); }
@@ -221,19 +300,26 @@ impl EngineState {
         self.shader.enable();
         self.shader.uniform_mat4("view", &self.camera.view());
         self.shader.uniform_mat4("persp", &self.camera.persp);
-        self.shader.uniform_f32("u_time", self.itime.elapsed().unwrap().as_secs_f32());
+        self.shader
+            .uniform_f32("u_time", self.itime.elapsed().unwrap().as_secs_f32());
         self.grid.verts.iter().for_each(|v| {
             //println!("World Space: {:?}", nalgebra::Vector4::new(v.pos.x, v.pos.y, v.pos.z, 1.0));
             //println!("View Space: {:?}", nalgebra_glm::perspective_rh_no(self.resolution[0]/self.resolution[1], self.camera.fov.to_radians(), 0.01, 100.0) * self.camera.view() * nalgebra::Vector4::new(v.pos.x, v.pos.y, v.pos.z, 1.0));
-            let vndc = nalgebra_glm::perspective_rh_no(self.resolution[0]/self.resolution[1], self.camera.fov.to_radians(), 0.01, 100.0) * self.camera.view() * nalgebra::Vector4::new(v.pos.x, v.pos.y, v.pos.z, 1.0);
+            let vndc = nalgebra_glm::perspective_rh_no(
+                self.resolution[0] / self.resolution[1],
+                self.camera.fov.to_radians(),
+                0.01,
+                100.0,
+            ) * self.camera.view()
+                * nalgebra::Vector4::new(v.pos.x, v.pos.y, v.pos.z, 1.0);
             //println!("Clip Space: {:?}", nalgebra_glm::perspective_rh_no(self.resolution[0]/self.resolution[1], self.camera.fov.to_radians(), 0.01, 100.0) * self.camera.view() * nalgebra::Vector4::new(v.pos.x, v.pos.y, v.pos.z, 1.0));
             //println!("vndc: {:?}", vndc.xyz() / vndc.w);
         });
 
         Texture::set_active_unit(gl::TEXTURE16);
         let _ = self.default_texture.bind();
-        self.shader.uniform_tex("default_tex", 16);
-        renderer::render_mesh(&self.default_cube.mesh);
+        self.shader.uniform_tex("default_tex", 0);
+        //renderer::render_mesh(&self.default_cube.mesh);
 
         // render grid
         let grid_shader = Shader::from("res/shaders/hello.vert", "res/shaders/grid.frag");
@@ -268,7 +354,12 @@ impl EngineState {
                         }
                         self.resolution[0] = size.width as f32;
                         self.resolution[1] = size.height as f32;
-                        self.camera.persp = nalgebra_glm::perspective_rh_no(self.resolution[0]/self.resolution[1], self.camera.fov, 0.01, 100.0);
+                        self.camera.persp = nalgebra_glm::perspective_rh_no(
+                            self.resolution[0] / self.resolution[1],
+                            self.camera.fov,
+                            0.01,
+                            100.0,
+                        );
                         self.egui_painter.shader.enable();
                         self.egui_painter.shader.uniform_vec2(
                             "u_screen_size",
@@ -369,7 +460,7 @@ impl EngineState {
                             let sdt = format!(
                                 "Milliseconds: {}\n FPS: {}",
                                 self.dt.as_secs_f32() * 1000.0,
-                                1.0 / self.dt.as_secs_f32() * 1000.0
+                                1.0 / (self.dt.as_secs_f32())
                             );
                             ui.label(sdt);
                             if ui.button("Click me").clicked() {
@@ -379,9 +470,7 @@ impl EngineState {
                             ui.add(
                                 egui::Slider::new(&mut self.camera.fov, 1.0..=120.0).text("age"),
                             );
-                            ui.add(
-                                egui::Slider::new(&mut self.fillet, -2.0..=2.0).text("fillet"),
-                            );
+                            ui.add(egui::Slider::new(&mut self.fillet, -2.0..=2.0).text("fillet"));
                             static mut MY_BOOL: bool = false;
                             unsafe {
                                 ui.add(egui::Checkbox::new(&mut MY_BOOL, "Checked"));

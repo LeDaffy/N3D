@@ -39,6 +39,7 @@ pub enum MyDataType {
 pub enum MyValueType {
     Vec2 { value: egui::Vec2 },
     Scalar { value: f32 },
+    Box { x: f32, y: f32, z: f32 },
 }
 
 impl Default for MyValueType {
@@ -67,6 +68,15 @@ impl MyValueType {
             anyhow::bail!("Invalid cast from {:?} to scalar", self)
         }
     }
+
+    /// Tries to downcast this value type to a scalar
+    pub fn try_to_box(self) -> anyhow::Result<(f32, f32, f32)> {
+        if let MyValueType::Box { x, y, z } = self {
+            Ok((x, y, z))
+        } else {
+            anyhow::bail!("Invalid cast from {:?} to Box", self)
+        }
+    }
 }
 
 /// NodeTemplate is a mechanism to define node templates. It's what the graph
@@ -82,6 +92,7 @@ pub enum MyNodeTemplate {
     AddVector,
     SubtractVector,
     VectorTimesScalar,
+    Box,
 }
 
 /// The response type is used to encode side-effects produced when drawing a
@@ -140,6 +151,7 @@ impl NodeTemplateTrait for MyNodeTemplate {
             MyNodeTemplate::AddVector => "Vector add",
             MyNodeTemplate::SubtractVector => "Vector subtract",
             MyNodeTemplate::VectorTimesScalar => "Vector times scalar",
+            MyNodeTemplate::Box => "SDF Box",
         })
     }
 
@@ -153,6 +165,7 @@ impl NodeTemplateTrait for MyNodeTemplate {
             | MyNodeTemplate::AddVector
             | MyNodeTemplate::SubtractVector => vec!["Vector"],
             MyNodeTemplate::VectorTimesScalar => vec!["Vector", "Scalar"],
+            MyNodeTemplate::Box => vec!["SDF"],
         }
     }
 
@@ -258,6 +271,12 @@ impl NodeTemplateTrait for MyNodeTemplate {
                 input_scalar(graph, "value");
                 output_scalar(graph, "out");
             }
+            MyNodeTemplate::Box => {
+                input_scalar(graph, "x");
+                input_scalar(graph, "y");
+                input_scalar(graph, "z");
+                output_scalar(graph, "sdf");
+            }
         }
     }
 }
@@ -278,6 +297,7 @@ impl NodeTemplateIter for AllMyNodeTemplates {
             MyNodeTemplate::AddVector,
             MyNodeTemplate::SubtractVector,
             MyNodeTemplate::VectorTimesScalar,
+            MyNodeTemplate::Box,
         ]
     }
 }
@@ -310,6 +330,16 @@ impl WidgetValueTrait for MyValueType {
                 ui.horizontal(|ui| {
                     ui.label(param_name);
                     ui.add(DragValue::new(value));
+                });
+            }
+            MyValueType::Box { x, y, z } => {
+                ui.horizontal(|ui| {
+                    ui.label("x");
+                    ui.add(DragValue::new(x));
+                    ui.label("y");
+                    ui.add(DragValue::new(y));
+                    ui.label("z");
+                    ui.add(DragValue::new(z));
                 });
             }
         }
@@ -401,7 +431,9 @@ impl NodeGraphExample {
                 egui::widgets::global_dark_light_mode_switch(ui);
             });
         });
-        let graph_response = egui::TopBottomPanel::bottom("node_panel").resizable(true).min_height(256.0)
+        let graph_response = egui::TopBottomPanel::bottom("node_panel")
+            .resizable(true)
+            .min_height(256.0)
             .show(ctx, |ui| {
                 self.state.draw_graph_editor(
                     ui,
@@ -544,6 +576,12 @@ pub fn evaluate_node(
         MyNodeTemplate::MakeScalar => {
             let value = evaluator.input_scalar("value")?;
             evaluator.output_scalar("out", value)
+        }
+        MyNodeTemplate::Box => {
+            let x = evaluator.input_scalar("x")?;
+            let _y = evaluator.input_scalar("y")?;
+            let _z = evaluator.input_scalar("z")?;
+            evaluator.output_scalar("SDF", x)
         }
     }
 }

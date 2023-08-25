@@ -23,8 +23,9 @@ impl RayMarcher {
             mesh,
             shader: Shader::from("res/shaders/ray.vert", "res/shaders/ray.frag"),
             zoom: 1.0,
-            matcap: Texture::open("res/matcap/metal_shiny.tga").unwrap(),
-            //matcap: Texture::open("res/matcap/jade.tga").unwrap(),
+            //matcap: Texture::open("res/matcap/metal_shiny.tga").unwrap(),
+            //matcap: Texture::open("res/matcap/default.png").unwrap(),
+            matcap: Texture::open("res/matcap/jade.tga").unwrap(),
             //matcap: Texture::open("res/matcap/metal_carpaint.tga").unwrap(),
             //matcap: Texture::open("res/matcap/reflection_check_horizontal.tga").unwrap(),
         }
