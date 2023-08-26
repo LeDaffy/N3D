@@ -95,7 +95,7 @@ impl EngineState {
                     0.25,
                     0.05,
                 ),
-                0.05,
+                0.25,
             )
             .op_diff_smooth(
                 SDFBuilder::p_box(
@@ -106,7 +106,7 @@ impl EngineState {
                     [0.5, 0.5, 0.5],
                     0.05,
                 ),
-                0.05,
+                0.25,
             )
             .op_union_smooth(
                 SDFBuilder::p_sphere(
@@ -115,12 +115,35 @@ impl EngineState {
                 ),
                 0.25,
             )
+            .op_union_smooth(
+                SDFBuilder::p_cylinder(
+                    Some(SDFBuilder::translate(
+                        Some(SDFBuilder::rotate::<String>(None, [0.0, 0.0, -30.0])),
+                        [-0.5, 0.0, 0.0],
+                    )),
+                    1.0,
+                    0.25,
+                    0.05,
+                ),
+                0.25,
+            )
+            .op_union_smooth(
+                SDFBuilder::p_box(
+                    Some(SDFBuilder::translate(
+                        Some(SDFBuilder::rotate::<String>(None, [0.0, 0.0, 0.0])),
+                        [0.0, -0.5, 0.0],
+                    )),
+                    [0.55, 0.45, 0.25],
+                    0.05,
+                ),
+                0.25,
+            )
             .build();
         self.ray_marcher.shader =
             Shader::new(std::include_str!("../res/shaders/ray.vert"), sdf.as_str());
-        println!("=============");
-        println!("{}", sdf);
-        println!("=============");
+        //println!("=============");
+        //println!("{}", sdf);
+        //println!("=============");
         self.camera.persp = nalgebra_glm::perspective_rh_no(
             self.resolution[0] / self.resolution[1],
             self.camera.fov.to_radians(),
@@ -201,7 +224,7 @@ impl EngineState {
             gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL);
             gl::Enable(gl::BLEND);
             gl::Enable(gl::DEPTH_TEST);
-            gl::Enable(gl::MULTISAMPLE);
+            //gl::Enable(gl::MULTISAMPLE);
             gl::ClearColor(0.15, 0.15, 0.15, 1.0);
         }
     }

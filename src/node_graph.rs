@@ -3,9 +3,9 @@ use std::{borrow::Cow, collections::HashMap};
 use egui::{self, DragValue, TextStyle};
 use egui_node_graph::*;
 
-type MyGraph = Graph<MyNodeData, MyDataType, MyValueType>;
+type MyGraph = Graph<MyNodeData, MyDataType, N3DValueType>;
 type MyEditorState =
-    GraphEditorState<MyNodeData, MyDataType, MyValueType, MyNodeTemplate, MyGraphState>;
+    GraphEditorState<MyNodeData, MyDataType, N3DValueType, N3DNodeTemplate, MyGraphState>;
 
 // ========= First, define your user data types =============
 
@@ -14,7 +14,7 @@ type MyEditorState =
 /// example, the node data stores the template (i.e. the "type") of the node.
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct MyNodeData {
-    template: MyNodeTemplate,
+    template: N3DNodeTemplate,
 }
 
 /// `DataType`s are what defines the possible range of connections when
@@ -25,6 +25,7 @@ pub struct MyNodeData {
 pub enum MyDataType {
     Scalar,
     Vec2,
+    Vec3,
 }
 
 /// In the graph, input parameters can optionally have a constant value. This
@@ -36,13 +37,13 @@ pub enum MyDataType {
 /// with a DataType of Scalar and a ValueType of Vec2.
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
-pub enum MyValueType {
-    Vec2 { value: egui::Vec2 },
+pub enum N3DValueType {
     Scalar { value: f32 },
-    Box { x: f32, y: f32, z: f32 },
+    Vec2 { value: nalgebra::Vector2::<f32> },
+    Vec3 { value: nalgebra::Vector3::<f32> },
 }
 
-impl Default for MyValueType {
+impl Default for N3DValueType {
     fn default() -> Self {
         // NOTE: This is just a dummy `Default` implementation. The library
         // requires it to circumvent some internal borrow checker issues.
@@ -50,33 +51,30 @@ impl Default for MyValueType {
     }
 }
 
-impl MyValueType {
+impl N3DValueType {
     /// Tries to downcast this value type to a vector
-    pub fn try_to_vec2(self) -> anyhow::Result<egui::Vec2> {
-        if let MyValueType::Vec2 { value } = self {
+    pub fn try_to_vec2(self) -> anyhow::Result<nalgebra::Vector2::<f32>> {
+        if let N3DValueType::Vec2 { value } = self {
             Ok(value)
         } else {
             anyhow::bail!("Invalid cast from {:?} to vec2", self)
         }
     }
-
-    /// Tries to downcast this value type to a scalar
+    pub fn try_to_vec3(self) -> anyhow::Result<nalgebra::Vector3::<f32>> {
+        if let N3DValueType::Vec3 { value } = self {
+            Ok(value)
+        } else {
+            anyhow::bail!("Invalid cast from {:?} to vec3", self)
+        }
+    }
     pub fn try_to_scalar(self) -> anyhow::Result<f32> {
-        if let MyValueType::Scalar { value } = self {
+        if let N3DValueType::Scalar { value } = self {
             Ok(value)
         } else {
             anyhow::bail!("Invalid cast from {:?} to scalar", self)
         }
     }
 
-    /// Tries to downcast this value type to a scalar
-    pub fn try_to_box(self) -> anyhow::Result<(f32, f32, f32)> {
-        if let MyValueType::Box { x, y, z } = self {
-            Ok((x, y, z))
-        } else {
-            anyhow::bail!("Invalid cast from {:?} to Box", self)
-        }
-    }
 }
 
 /// NodeTemplate is a mechanism to define node templates. It's what the graph
@@ -84,15 +82,16 @@ impl MyValueType {
 /// library how to convert a NodeTemplate into a Node.
 #[derive(Clone, Copy)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
-pub enum MyNodeTemplate {
-    MakeScalar,
-    AddScalar,
-    SubtractScalar,
-    MakeVector,
-    AddVector,
-    SubtractVector,
-    VectorTimesScalar,
-    Box,
+pub enum N3DNodeTemplate {
+    NewScalar,
+    ScalarAdd,
+    ScalarSub,
+    NewVec2,
+    Vec2Add,
+    Vec2Subtract,
+    Vec2ScalarMul,
+    NewVec3,
+    Vec3Add,
 }
 
 /// The response type is used to encode side-effects produced when drawing a
@@ -122,50 +121,54 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
         match self {
             MyDataType::Scalar => egui::Color32::from_rgb(38, 109, 211),
             MyDataType::Vec2 => egui::Color32::from_rgb(238, 207, 109),
+            MyDataType::Vec3 => egui::Color32::from_rgb(148, 255, 0),
         }
     }
 
     fn name(&self) -> Cow<'_, str> {
         match self {
             MyDataType::Scalar => Cow::Borrowed("scalar"),
-            MyDataType::Vec2 => Cow::Borrowed("2d vector"),
+            MyDataType::Vec2 => Cow::Borrowed("vec2"),
+            MyDataType::Vec3 => Cow::Borrowed("vec3"),
         }
     }
 }
 
 // A trait for the node kinds, which tells the library how to build new nodes
 // from the templates in the node finder
-impl NodeTemplateTrait for MyNodeTemplate {
+impl NodeTemplateTrait for N3DNodeTemplate {
     type NodeData = MyNodeData;
     type DataType = MyDataType;
-    type ValueType = MyValueType;
+    type ValueType = N3DValueType;
     type UserState = MyGraphState;
     type CategoryType = &'static str;
 
     fn node_finder_label(&self, _user_state: &mut Self::UserState) -> Cow<'_, str> {
         Cow::Borrowed(match self {
-            MyNodeTemplate::MakeScalar => "New scalar",
-            MyNodeTemplate::AddScalar => "Scalar add",
-            MyNodeTemplate::SubtractScalar => "Scalar subtract",
-            MyNodeTemplate::MakeVector => "New vector",
-            MyNodeTemplate::AddVector => "Vector add",
-            MyNodeTemplate::SubtractVector => "Vector subtract",
-            MyNodeTemplate::VectorTimesScalar => "Vector times scalar",
-            MyNodeTemplate::Box => "SDF Box",
+            N3DNodeTemplate::NewScalar => "New scalar",
+            N3DNodeTemplate::ScalarAdd => "Scalar add",
+            N3DNodeTemplate::ScalarSub => "Scalar subtract",
+            N3DNodeTemplate::NewVec2 => "New Vec2",
+            N3DNodeTemplate::Vec2Add => "Vec2 Add",
+            N3DNodeTemplate::Vec2Subtract => "Vec2 Subtract",
+            N3DNodeTemplate::Vec2ScalarMul => "Vec2 Scalar Multiply",
+            N3DNodeTemplate::NewVec3 => "New Vec3",
+            N3DNodeTemplate::Vec3Add => "Vec3 Add",
         })
     }
 
     // this is what allows the library to show collapsible lists in the node finder.
     fn node_finder_categories(&self, _user_state: &mut Self::UserState) -> Vec<&'static str> {
         match self {
-            MyNodeTemplate::MakeScalar
-            | MyNodeTemplate::AddScalar
-            | MyNodeTemplate::SubtractScalar => vec!["Scalar"],
-            MyNodeTemplate::MakeVector
-            | MyNodeTemplate::AddVector
-            | MyNodeTemplate::SubtractVector => vec!["Vector"],
-            MyNodeTemplate::VectorTimesScalar => vec!["Vector", "Scalar"],
-            MyNodeTemplate::Box => vec!["SDF"],
+            N3DNodeTemplate::NewScalar
+            | N3DNodeTemplate::ScalarAdd
+            | N3DNodeTemplate::ScalarSub => vec!["Scalar"],
+            N3DNodeTemplate::NewVec2
+            | N3DNodeTemplate::Vec2Add
+            | N3DNodeTemplate::Vec2Subtract => vec!["Vec2"],
+            N3DNodeTemplate::Vec2ScalarMul => vec!["Vec2", "Scalar"],
+            N3DNodeTemplate::NewVec3
+            | N3DNodeTemplate::Vec3Add => vec!["Vec3"],
         }
     }
 
@@ -195,33 +198,47 @@ impl NodeTemplateTrait for MyNodeTemplate {
                 node_id,
                 name.to_string(),
                 MyDataType::Scalar,
-                MyValueType::Scalar { value: 0.0 },
+                N3DValueType::Scalar { value: 0.0 },
                 InputParamKind::ConnectionOrConstant,
                 true,
             );
         };
-        let input_vector = |graph: &mut MyGraph, name: &str| {
+        let output_scalar = |graph: &mut MyGraph, name: &str| {
+            graph.add_output_param(node_id, name.to_string(), MyDataType::Scalar);
+        };
+        let input_vec2 = |graph: &mut MyGraph, name: &str| {
             graph.add_input_param(
                 node_id,
                 name.to_string(),
                 MyDataType::Vec2,
-                MyValueType::Vec2 {
-                    value: egui::vec2(0.0, 0.0),
+                N3DValueType::Vec2 {
+                    value: nalgebra::Vector2::new(0.0, 0.0),
                 },
                 InputParamKind::ConnectionOrConstant,
                 true,
             );
         };
-
-        let output_scalar = |graph: &mut MyGraph, name: &str| {
-            graph.add_output_param(node_id, name.to_string(), MyDataType::Scalar);
-        };
-        let output_vector = |graph: &mut MyGraph, name: &str| {
+        let output_vec2 = |graph: &mut MyGraph, name: &str| {
             graph.add_output_param(node_id, name.to_string(), MyDataType::Vec2);
+        };
+        let input_vec3 = |graph: &mut MyGraph, name: &str| {
+            graph.add_input_param(
+                node_id,
+                name.to_string(),
+                MyDataType::Vec3,
+                N3DValueType::Vec3 {
+                    value: nalgebra::Vector3::new(0.0, 0.0, 0.0),
+                },
+                InputParamKind::ConnectionOrConstant,
+                true,
+            );
+        };
+        let output_vec3 = |graph: &mut MyGraph, name: &str| {
+            graph.add_output_param(node_id, name.to_string(), MyDataType::Vec3);
         };
 
         match self {
-            MyNodeTemplate::AddScalar => {
+            N3DNodeTemplate::ScalarAdd => {
                 // The first input param doesn't use the closure so we can comment
                 // it in more detail.
                 graph.add_input_param(
@@ -232,7 +249,7 @@ impl NodeTemplateTrait for MyNodeTemplate {
                     // The data type for this input. In this case, a scalar
                     MyDataType::Scalar,
                     // The value type for this input. We store zero as default
-                    MyValueType::Scalar { value: 0.0 },
+                    N3DValueType::Scalar { value: 0.0 },
                     // The input parameter kind. This allows defining whether a
                     // parameter accepts input connections and/or an inline
                     // widget to set its value.
@@ -242,67 +259,73 @@ impl NodeTemplateTrait for MyNodeTemplate {
                 input_scalar(graph, "B");
                 output_scalar(graph, "out");
             }
-            MyNodeTemplate::SubtractScalar => {
+            N3DNodeTemplate::ScalarSub => {
                 input_scalar(graph, "A");
                 input_scalar(graph, "B");
                 output_scalar(graph, "out");
             }
-            MyNodeTemplate::VectorTimesScalar => {
+            N3DNodeTemplate::Vec2ScalarMul => {
                 input_scalar(graph, "scalar");
-                input_vector(graph, "vector");
-                output_vector(graph, "out");
+                input_vec2(graph, "vector");
+                output_vec2(graph, "out");
             }
-            MyNodeTemplate::AddVector => {
-                input_vector(graph, "v1");
-                input_vector(graph, "v2");
-                output_vector(graph, "out");
+            N3DNodeTemplate::Vec2Add => {
+                input_vec2(graph, "v1");
+                input_vec2(graph, "v2");
+                output_vec2(graph, "out");
             }
-            MyNodeTemplate::SubtractVector => {
-                input_vector(graph, "v1");
-                input_vector(graph, "v2");
-                output_vector(graph, "out");
+            N3DNodeTemplate::Vec2Subtract => {
+                input_vec2(graph, "v1");
+                input_vec2(graph, "v2");
+                output_vec2(graph, "out");
             }
-            MyNodeTemplate::MakeVector => {
+            N3DNodeTemplate::NewVec2 => {
                 input_scalar(graph, "x");
                 input_scalar(graph, "y");
-                output_vector(graph, "out");
+                output_vec2(graph, "out");
             }
-            MyNodeTemplate::MakeScalar => {
+            N3DNodeTemplate::NewScalar => {
                 input_scalar(graph, "value");
                 output_scalar(graph, "out");
             }
-            MyNodeTemplate::Box => {
+            N3DNodeTemplate::NewVec3 => {
                 input_scalar(graph, "x");
                 input_scalar(graph, "y");
                 input_scalar(graph, "z");
-                output_scalar(graph, "sdf");
+                output_vec3(graph, "out");
+            }
+            N3DNodeTemplate::Vec3Add => {
+                input_vec3(graph, "v1");
+                input_vec3(graph, "v2");
+                output_vec3(graph, "out");
             }
         }
     }
 }
 
-pub struct AllMyNodeTemplates;
-impl NodeTemplateIter for AllMyNodeTemplates {
-    type Item = MyNodeTemplate;
+pub struct AllN3DNodeTemplates;
+impl NodeTemplateIter for AllN3DNodeTemplates {
+    type Item = N3DNodeTemplate;
 
     fn all_kinds(&self) -> Vec<Self::Item> {
         // This function must return a list of node kinds, which the node finder
         // will use to display it to the user. Crates like strum can reduce the
         // boilerplate in enumerating all variants of an enum.
         vec![
-            MyNodeTemplate::MakeScalar,
-            MyNodeTemplate::MakeVector,
-            MyNodeTemplate::AddScalar,
-            MyNodeTemplate::SubtractScalar,
-            MyNodeTemplate::AddVector,
-            MyNodeTemplate::SubtractVector,
-            MyNodeTemplate::VectorTimesScalar,
-            MyNodeTemplate::Box,
+            N3DNodeTemplate::NewScalar,
+            N3DNodeTemplate::NewVec2,
+            N3DNodeTemplate::ScalarAdd,
+            N3DNodeTemplate::ScalarSub,
+            N3DNodeTemplate::Vec2Add,
+            N3DNodeTemplate::Vec2Subtract,
+            N3DNodeTemplate::Vec2ScalarMul,
+            N3DNodeTemplate::NewVec3,
+            N3DNodeTemplate::Vec3Add,
         ]
     }
 }
 
-impl WidgetValueTrait for MyValueType {
+impl WidgetValueTrait for N3DValueType {
     type Response = MyResponse;
     type UserState = MyGraphState;
     type NodeData = MyNodeData;
@@ -317,7 +340,7 @@ impl WidgetValueTrait for MyValueType {
         // This trait is used to tell the library which UI to display for the
         // inline parameter widgets.
         match self {
-            MyValueType::Vec2 { value } => {
+            N3DValueType::Vec2 { value } => {
                 ui.label(param_name);
                 ui.horizontal(|ui| {
                     ui.label("x");
@@ -326,20 +349,21 @@ impl WidgetValueTrait for MyValueType {
                     ui.add(DragValue::new(&mut value.y));
                 });
             }
-            MyValueType::Scalar { value } => {
+            N3DValueType::Vec3 { value } => {
+                ui.label(param_name);
+                ui.horizontal(|ui| {
+                    ui.label("x");
+                    ui.add(DragValue::new(&mut value.x));
+                    ui.label("y");
+                    ui.add(DragValue::new(&mut value.y));
+                    ui.label("z");
+                    ui.add(DragValue::new(&mut value.z));
+                });
+            }
+            N3DValueType::Scalar { value } => {
                 ui.horizontal(|ui| {
                     ui.label(param_name);
                     ui.add(DragValue::new(value));
-                });
-            }
-            MyValueType::Box { x, y, z } => {
-                ui.horizontal(|ui| {
-                    ui.label("x");
-                    ui.add(DragValue::new(x));
-                    ui.label("y");
-                    ui.add(DragValue::new(y));
-                    ui.label("z");
-                    ui.add(DragValue::new(z));
                 });
             }
         }
@@ -352,7 +376,7 @@ impl NodeDataTrait for MyNodeData {
     type Response = MyResponse;
     type UserState = MyGraphState;
     type DataType = MyDataType;
-    type ValueType = MyValueType;
+    type ValueType = N3DValueType;
 
     // This method will be called when drawing each node. This allows adding
     // extra ui elements inside the nodes. In this case, we create an "active"
@@ -363,7 +387,7 @@ impl NodeDataTrait for MyNodeData {
         &self,
         ui: &mut egui::Ui,
         node_id: NodeId,
-        _graph: &Graph<MyNodeData, MyDataType, MyValueType>,
+        _graph: &Graph<MyNodeData, MyDataType, N3DValueType>,
         user_state: &mut Self::UserState,
     ) -> Vec<NodeResponse<MyResponse, MyNodeData>>
     where
@@ -385,13 +409,13 @@ impl NodeDataTrait for MyNodeData {
         // the library only makes the responses available to you after the graph
         // has been drawn. See below at the update method for an example.
         if !is_active {
-            if ui.button("👁 Set active").clicked() {
+            if ui.button("[ ] Set active").clicked() {
                 responses.push(NodeResponse::User(MyResponse::SetActiveNode(node_id)));
             }
         } else {
             let button =
-                egui::Button::new(egui::RichText::new("👁 Active").color(egui::Color32::BLACK))
-                    .fill(egui::Color32::GOLD);
+                egui::Button::new(egui::RichText::new("[x] Active").color(egui::Color32::BLACK))
+                    .fill(egui::Color32::LIGHT_GREEN);
             if ui.add(button).clicked() {
                 responses.push(NodeResponse::User(MyResponse::ClearActiveNode));
             }
@@ -437,7 +461,7 @@ impl NodeGraphExample {
             .show(ctx, |ui| {
                 self.state.draw_graph_editor(
                     ui,
-                    AllMyNodeTemplates,
+                    AllN3DNodeTemplates,
                     &mut self.user_state,
                     Vec::default(),
                 )
@@ -475,14 +499,14 @@ impl NodeGraphExample {
     }
 }
 
-type OutputsCache = HashMap<OutputId, MyValueType>;
+type OutputsCache = HashMap<OutputId, N3DValueType>;
 
 /// Recursively evaluates all dependencies of this node, then evaluates the node itself.
 pub fn evaluate_node(
     graph: &MyGraph,
     node_id: NodeId,
     outputs_cache: &mut OutputsCache,
-) -> anyhow::Result<MyValueType> {
+) -> anyhow::Result<N3DValueType> {
     // To solve a similar problem as creating node types above, we define an
     // Evaluator as a convenience. It may be overkill for this small example,
     // but something like this makes the code much more readable when the
@@ -501,7 +525,7 @@ pub fn evaluate_node(
                 node_id,
             }
         }
-        fn evaluate_input(&mut self, name: &str) -> anyhow::Result<MyValueType> {
+        fn evaluate_input(&mut self, name: &str) -> anyhow::Result<N3DValueType> {
             // Calling `evaluate_input` recursively evaluates other nodes in the
             // graph until the input value for a paramater has been computed.
             evaluate_input(self.graph, self.node_id, name, self.outputs_cache)
@@ -509,8 +533,8 @@ pub fn evaluate_node(
         fn populate_output(
             &mut self,
             name: &str,
-            value: MyValueType,
-        ) -> anyhow::Result<MyValueType> {
+            value: N3DValueType,
+        ) -> anyhow::Result<N3DValueType> {
             // After computing an output, we don't just return it, but we also
             // populate the outputs cache with it. This ensures the evaluation
             // only ever computes an output once.
@@ -526,62 +550,74 @@ pub fn evaluate_node(
             // the graphs, you can come up with your own evaluation semantics!
             populate_output(self.graph, self.outputs_cache, self.node_id, name, value)
         }
-        fn input_vector(&mut self, name: &str) -> anyhow::Result<egui::Vec2> {
+        fn input_vec2(&mut self, name: &str) -> anyhow::Result<nalgebra::Vector2::<f32>> {
             self.evaluate_input(name)?.try_to_vec2()
+        }
+        fn output_vec2(&mut self, name: &str, value: nalgebra::Vector2::<f32>) -> anyhow::Result<N3DValueType> {
+            self.populate_output(name, N3DValueType::Vec2 { value })
+        }
+        fn input_vec3(&mut self, name: &str) -> anyhow::Result<nalgebra::Vector3::<f32>> {
+            self.evaluate_input(name)?.try_to_vec3()
+        }
+        fn output_vec3(&mut self, name: &str, value: nalgebra::Vector3::<f32>) -> anyhow::Result<N3DValueType> {
+            self.populate_output(name, N3DValueType::Vec3 { value })
         }
         fn input_scalar(&mut self, name: &str) -> anyhow::Result<f32> {
             self.evaluate_input(name)?.try_to_scalar()
         }
-        fn output_vector(&mut self, name: &str, value: egui::Vec2) -> anyhow::Result<MyValueType> {
-            self.populate_output(name, MyValueType::Vec2 { value })
-        }
-        fn output_scalar(&mut self, name: &str, value: f32) -> anyhow::Result<MyValueType> {
-            self.populate_output(name, MyValueType::Scalar { value })
+        fn output_scalar(&mut self, name: &str, value: f32) -> anyhow::Result<N3DValueType> {
+            self.populate_output(name, N3DValueType::Scalar { value })
         }
     }
 
     let node = &graph[node_id];
     let mut evaluator = Evaluator::new(graph, outputs_cache, node_id);
     match node.user_data.template {
-        MyNodeTemplate::AddScalar => {
+        N3DNodeTemplate::ScalarAdd => {
             let a = evaluator.input_scalar("A")?;
             let b = evaluator.input_scalar("B")?;
             evaluator.output_scalar("out", a + b)
         }
-        MyNodeTemplate::SubtractScalar => {
+        N3DNodeTemplate::ScalarSub => {
             let a = evaluator.input_scalar("A")?;
             let b = evaluator.input_scalar("B")?;
             evaluator.output_scalar("out", a - b)
         }
-        MyNodeTemplate::VectorTimesScalar => {
+        N3DNodeTemplate::Vec2ScalarMul => {
             let scalar = evaluator.input_scalar("scalar")?;
-            let vector = evaluator.input_vector("vector")?;
-            evaluator.output_vector("out", vector * scalar)
+            let vector = evaluator.input_vec2("vector")?;
+            evaluator.output_vec2("out", vector * scalar)
         }
-        MyNodeTemplate::AddVector => {
-            let v1 = evaluator.input_vector("v1")?;
-            let v2 = evaluator.input_vector("v2")?;
-            evaluator.output_vector("out", v1 + v2)
+        N3DNodeTemplate::Vec2Add => {
+            let v1 = evaluator.input_vec2("v1")?;
+            let v2 = evaluator.input_vec2("v2")?;
+            evaluator.output_vec2("out", v1 + v2)
         }
-        MyNodeTemplate::SubtractVector => {
-            let v1 = evaluator.input_vector("v1")?;
-            let v2 = evaluator.input_vector("v2")?;
-            evaluator.output_vector("out", v1 - v2)
+        N3DNodeTemplate::Vec2Subtract => {
+            let v1 = evaluator.input_vec2("v1")?;
+            let v2 = evaluator.input_vec2("v2")?;
+            evaluator.output_vec2("out", v1 - v2)
         }
-        MyNodeTemplate::MakeVector => {
+        N3DNodeTemplate::NewVec2 => {
             let x = evaluator.input_scalar("x")?;
             let y = evaluator.input_scalar("y")?;
-            evaluator.output_vector("out", egui::vec2(x, y))
+            evaluator.output_vec2("out", nalgebra::Vector2::new(x, y))
         }
-        MyNodeTemplate::MakeScalar => {
+        N3DNodeTemplate::NewScalar => {
             let value = evaluator.input_scalar("value")?;
             evaluator.output_scalar("out", value)
         }
-        MyNodeTemplate::Box => {
+        N3DNodeTemplate::NewVec3 => {
             let x = evaluator.input_scalar("x")?;
-            let _y = evaluator.input_scalar("y")?;
-            let _z = evaluator.input_scalar("z")?;
-            evaluator.output_scalar("SDF", x)
+            let y = evaluator.input_scalar("y")?;
+            let z = evaluator.input_scalar("z")?;
+            evaluator.output_vec3("out", nalgebra::Vector3::new(x,y,z))
+            //evaluator.output_vec3("out", nalgebra::Vector3::new(1.0, 2.0, 3.0))
+        }
+        N3DNodeTemplate::Vec3Add => {
+            let v1 = evaluator.input_vec3("v1")?;
+            let v2 = evaluator.input_vec3("v2")?;
+            evaluator.output_vec3("out", v1 - v2)
         }
     }
 }
@@ -590,8 +626,8 @@ fn populate_output(
     outputs_cache: &mut OutputsCache,
     node_id: NodeId,
     param_name: &str,
-    value: MyValueType,
-) -> anyhow::Result<MyValueType> {
+    value: N3DValueType,
+) -> anyhow::Result<N3DValueType> {
     let output_id = graph[node_id].get_output(param_name)?;
     outputs_cache.insert(output_id, value);
     Ok(value)
@@ -603,7 +639,7 @@ fn evaluate_input(
     node_id: NodeId,
     param_name: &str,
     outputs_cache: &mut OutputsCache,
-) -> anyhow::Result<MyValueType> {
+) -> anyhow::Result<N3DValueType> {
     let input_id = graph[node_id].get_input(param_name)?;
 
     // The output of another node is connected.

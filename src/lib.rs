@@ -14,5 +14,6 @@ pub mod camera;
 pub mod ray_marcher;
 
 pub mod node_graph;
+pub mod nodes;
 
 pub mod sdf;

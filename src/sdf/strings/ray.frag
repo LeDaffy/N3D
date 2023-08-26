@@ -1,9 +1,9 @@
 marcher ray_march(vec3 ro, vec3 rd)
 {
     float total_distance_traveled = 0.0;
-    const int NUMBER_OF_STEPS = 256;
-    const float MINIMUM_HIT_DISTANCE = 0.001;
-    const float MAXIMUM_TRACE_DISTANCE = 50.0;
+    const int NUMBER_OF_STEPS = 48;
+    const float MINIMUM_HIT_DISTANCE = 0.01;
+    const float MAXIMUM_TRACE_DISTANCE = 20.0;
 
     for (int i = 0; i < NUMBER_OF_STEPS; ++i)
     {
