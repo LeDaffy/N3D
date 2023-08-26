@@ -6,6 +6,12 @@ pub struct Shader {
     pub id: GLuint,
 }
 
+impl Default for Shader {
+    fn default() -> Self {
+        Self { id: 0 }
+    }
+}
+
 impl Shader {
     pub fn enable(&self) {
         unsafe {

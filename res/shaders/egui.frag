@@ -13,8 +13,11 @@ void main()
     if (col.a < 0.01) {
         discard;
     }
+    if (o_col.rgb == vec3(27.0, 27.0, 27.0)) {
+        discard;
+    }
     if (o_col.r < 0.01) {
-        //discard;
+        discard;
     }
     FragColor = o_col / 255.0 * col;
 }

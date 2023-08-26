@@ -476,7 +476,9 @@ impl EngineState {
                 let raw_input = self.egui_st.take_egui_input(&window.window);
                 let full_output = self.ctx.run(raw_input, |ctx| {
                     self.graph.update(ctx);
-                    egui::Window::new("Outliner")
+                    // self.ray_marcher.shader =
+                    //     Shader::new(std::include_str!("../res/shaders/ray.vert"), sdf.as_str());
+                    egui::SidePanel::new(egui::panel::Side::Right, "Outliner")
                         .resizable(true)
                         .show(&ctx, |ui| {
                             ui.label("Hello world!");

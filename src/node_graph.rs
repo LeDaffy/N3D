@@ -3,6 +3,8 @@ use std::{borrow::Cow, collections::HashMap};
 use egui::{self, DragValue, TextStyle};
 use egui_node_graph::*;
 
+use crate::renderer::shader::Shader;
+
 type MyGraph = Graph<N3DNodeData, N3DDataType, N3DValueType>;
 type MyEditorState =
     GraphEditorState<N3DNodeData, N3DDataType, N3DValueType, N3DNodeTemplate, MyGraphState>;
@@ -26,7 +28,8 @@ pub enum N3DDataType {
     Scalar,
     Vec2,
     Vec3,
-    SDF,
+    SDFPosition,
+    SDFVolume,
 }
 
 /// In the graph, input parameters can optionally have a constant value. This
@@ -42,7 +45,8 @@ pub enum N3DValueType {
     Scalar { value: f32 },
     Vec2 { value: nalgebra::Vector2<f32> },
     Vec3 { value: nalgebra::Vector3<f32> },
-    SDF { value: String },
+    SDFPosition { value: String },
+    SDFVolume { value: String },
 }
 
 impl Default for N3DValueType {
@@ -76,11 +80,18 @@ impl N3DValueType {
             anyhow::bail!("Invalid cast from {:?} to scalar", self)
         }
     }
-    pub fn try_to_sdf(self) -> anyhow::Result<String> {
-        if let N3DValueType::SDF { value } = self {
+    pub fn try_to_sdf_position(self) -> anyhow::Result<String> {
+        if let N3DValueType::SDFPosition { value } = self {
             Ok(value.clone())
         } else {
-            anyhow::bail!("Invalid cast from {:?} to scalar", self)
+            anyhow::bail!("Invalid cast from {:?} to SDFPosition", self)
+        }
+    }
+    pub fn try_to_sdf_volume(self) -> anyhow::Result<String> {
+        if let N3DValueType::SDFVolume { value } = self {
+            Ok(value.clone())
+        } else {
+            anyhow::bail!("Invalid cast from {:?} to SDFValue", self)
         }
     }
 }
@@ -105,6 +116,8 @@ pub enum N3DNodeTemplate {
     Vec3Cross,
     SDFPosition,
     SDFTranslate,
+    SDFBox,
+    SDFUnion,
 }
 
 /// The response type is used to encode side-effects produced when drawing a
@@ -124,6 +137,7 @@ pub enum MyResponse {
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub struct MyGraphState {
     pub active_node: Option<NodeId>,
+    pub shader: Shader, 
 }
 
 // =========== Then, you need to implement some traits ============
@@ -135,7 +149,8 @@ impl DataTypeTrait<MyGraphState> for N3DDataType {
             N3DDataType::Scalar => egui::Color32::from_rgb(38, 109, 211),
             N3DDataType::Vec2 => egui::Color32::from_rgb(238, 207, 109),
             N3DDataType::Vec3 => egui::Color32::from_rgb(148, 255, 0),
-            N3DDataType::SDF => egui::Color32::from_rgb(99, 99, 199),
+            N3DDataType::SDFPosition => egui::Color32::from_rgb(99, 99, 199),
+            N3DDataType::SDFVolume => egui::Color32::from_rgb(247, 37, 133),
         }
     }
 
@@ -144,7 +159,8 @@ impl DataTypeTrait<MyGraphState> for N3DDataType {
             N3DDataType::Scalar => Cow::Borrowed("scalar"),
             N3DDataType::Vec2 => Cow::Borrowed("vec2"),
             N3DDataType::Vec3 => Cow::Borrowed("vec3"),
-            N3DDataType::SDF => Cow::Borrowed("sdf"),
+            N3DDataType::SDFPosition => Cow::Borrowed("SDF position"),
+            N3DDataType::SDFVolume => Cow::Borrowed("SDF Volume"),
         }
     }
 }
@@ -174,6 +190,8 @@ impl NodeTemplateTrait for N3DNodeTemplate {
             N3DNodeTemplate::Vec3Cross => "Vec3 Cross",
             N3DNodeTemplate::SDFPosition => "SDF Position",
             N3DNodeTemplate::SDFTranslate => "SDF Translate",
+            N3DNodeTemplate::SDFBox => "SDF Box",
+            N3DNodeTemplate::SDFUnion => "SDF Union",
         })
     }
 
@@ -193,7 +211,9 @@ impl NodeTemplateTrait for N3DNodeTemplate {
             | N3DNodeTemplate::Vec3Dot
             | N3DNodeTemplate::Vec3Cross => vec!["Vec3"],
             N3DNodeTemplate::SDFPosition
-            | N3DNodeTemplate::SDFTranslate => vec!["SDF"],
+            | N3DNodeTemplate::SDFTranslate
+            | N3DNodeTemplate::SDFBox
+            | N3DNodeTemplate::SDFUnion => vec!["SDF"],
         }
     }
 
@@ -231,18 +251,31 @@ impl NodeTemplateTrait for N3DNodeTemplate {
         let output_scalar = |graph: &mut MyGraph, name: &str| {
             graph.add_output_param(node_id, name.to_string(), N3DDataType::Scalar);
         };
-        let input_sdf = |graph: &mut MyGraph, name: &str| {
+        let input_sdf_position = |graph: &mut MyGraph, name: &str| {
             graph.add_input_param(
                 node_id,
                 name.to_string(),
-                N3DDataType::SDF,
-                N3DValueType::SDF { value: "".to_string() },
+                N3DDataType::SDFPosition,
+                N3DValueType::SDFPosition { value: "p".to_string() },
                 InputParamKind::ConnectionOrConstant,
                 true,
             );
         };
-        let output_sdf = |graph: &mut MyGraph, name: &str| {
-            graph.add_output_param(node_id, name.to_string(), N3DDataType::SDF);
+        let output_sdf_position = |graph: &mut MyGraph, name: &str| {
+            graph.add_output_param(node_id, name.to_string(), N3DDataType::SDFPosition);
+        };
+        let input_sdf_volume = |graph: &mut MyGraph, name: &str| {
+            graph.add_input_param(
+                node_id,
+                name.to_string(),
+                N3DDataType::SDFVolume,
+                N3DValueType::SDFVolume { value: "".to_string() },
+                InputParamKind::ConnectionOnly,
+                true,
+            );
+        };
+        let output_sdf_volume = |graph: &mut MyGraph, name: &str| {
+            graph.add_output_param(node_id, name.to_string(), N3DDataType::SDFVolume);
         };
         let input_vec2 = |graph: &mut MyGraph, name: &str| {
             graph.add_input_param(
@@ -353,12 +386,23 @@ impl NodeTemplateTrait for N3DNodeTemplate {
                 output_vec3(graph, "out");
             }
             N3DNodeTemplate::SDFPosition => {
-                output_sdf(graph, "out");
+                output_sdf_position(graph, "out");
             }
             N3DNodeTemplate::SDFTranslate => {
-                input_sdf(graph, "sdf");
                 input_vec3(graph, "translation");
-                output_sdf(graph, "out");
+                input_sdf_position(graph, "sdf position");
+                output_sdf_position(graph, "out");
+            }
+            N3DNodeTemplate::SDFBox => {
+                input_vec3(graph, "dimensions");
+                input_scalar(graph, "fillet");
+                input_sdf_position(graph, "sdf position");
+                output_sdf_volume(graph, "out");
+            }
+            N3DNodeTemplate::SDFUnion => {
+                input_sdf_volume(graph, "sdf 1");
+                input_sdf_volume(graph, "sdf 2");
+                output_sdf_volume(graph, "out");
             }
         }
     }
@@ -387,6 +431,8 @@ impl NodeTemplateIter for AllN3DNodeTemplates {
             N3DNodeTemplate::Vec3Cross,
             N3DNodeTemplate::SDFPosition,
             N3DNodeTemplate::SDFTranslate,
+            N3DNodeTemplate::SDFBox,
+            N3DNodeTemplate::SDFUnion,
         ]
     }
 }
@@ -410,29 +456,34 @@ impl WidgetValueTrait for N3DValueType {
                 ui.label(param_name);
                 ui.horizontal(|ui| {
                     ui.label("x");
-                    ui.add(DragValue::new(&mut value.x));
+                    ui.add(DragValue::new(&mut value.x).speed(0.1));
                     ui.label("y");
-                    ui.add(DragValue::new(&mut value.y));
+                    ui.add(DragValue::new(&mut value.y).speed(0.1));
                 });
             }
             N3DValueType::Vec3 { value } => {
                 ui.label(param_name);
                 ui.horizontal(|ui| {
                     ui.label("x");
-                    ui.add(DragValue::new(&mut value.x));
+                    ui.add(DragValue::new(&mut value.x).speed(0.1));
                     ui.label("y");
-                    ui.add(DragValue::new(&mut value.y));
+                    ui.add(DragValue::new(&mut value.y).speed(0.1));
                     ui.label("z");
-                    ui.add(DragValue::new(&mut value.z));
+                    ui.add(DragValue::new(&mut value.z).speed(0.1));
                 });
             }
             N3DValueType::Scalar { value } => {
                 ui.horizontal(|ui| {
                     ui.label(param_name);
-                    ui.add(DragValue::new(value));
+                    ui.add(DragValue::new(value).speed(0.1));
                 });
             }
-            N3DValueType::SDF { value: _ } => {
+            N3DValueType::SDFPosition { value: _ } => {
+                ui.horizontal(|ui| {
+                    ui.label(param_name);
+                });
+            }
+            N3DValueType::SDFVolume { value: _ } => {
                 ui.horizontal(|ui| {
                     ui.label(param_name);
                 });
@@ -647,11 +698,17 @@ pub fn evaluate_node(
         fn output_scalar(&mut self, name: &str, value: f32) -> anyhow::Result<N3DValueType> {
             self.populate_output(name, N3DValueType::Scalar { value })
         }
-        fn input_sdf(&mut self, name: &str) -> anyhow::Result<String> {
-            self.evaluate_input(name)?.try_to_sdf()
+        fn input_sdf_position(&mut self, name: &str) -> anyhow::Result<String> {
+            self.evaluate_input(name)?.try_to_sdf_position()
         }
-        fn output_sdf(&mut self, name: &str, value: String) -> anyhow::Result<N3DValueType> {
-            self.populate_output(name, N3DValueType::SDF { value })
+        fn output_sdf_position(&mut self, name: &str, value: String) -> anyhow::Result<N3DValueType> {
+            self.populate_output(name, N3DValueType::SDFPosition { value })
+        }
+        fn input_sdf_volume(&mut self, name: &str) -> anyhow::Result<String> {
+            self.evaluate_input(name)?.try_to_sdf_volume()
+        }
+        fn output_sdf_volume(&mut self, name: &str, value: String) -> anyhow::Result<N3DValueType> {
+            self.populate_output(name, N3DValueType::SDFVolume { value })
         }
     }
 
@@ -720,12 +777,23 @@ pub fn evaluate_node(
             evaluator.output_vec3("out", v1.cross(&v2))
         }
         N3DNodeTemplate::SDFPosition => {
-            evaluator.output_sdf("out", "p".to_string())
+            evaluator.output_sdf_position("out", "p".to_string())
         }
         N3DNodeTemplate::SDFTranslate => {
-            let sdf = evaluator.input_sdf("sdf")?;
             let t = evaluator.input_vec3("translation")?;
-            evaluator.output_sdf("out", format!("{} - vec3({}, {}, {})", sdf, t[0], t[1], t[2]))
+            let sdfp = evaluator.input_sdf_position("sdf position")?;
+            evaluator.output_sdf_position("out", format!("{} - vec3({}, {}, {})", sdfp, t[0], t[1], t[2]))
+        }
+        N3DNodeTemplate::SDFBox => {
+            let dim = evaluator.input_vec3("dimensions")?;
+            let fil = evaluator.input_scalar("fillet")?;
+            let pos = evaluator.input_sdf_position("sdf position")?;
+            evaluator.output_sdf_volume("out", format!("sdf_box({}, vec3({}, {}, {}) - vec3({})) - {}", pos, dim[0], dim[1], dim[2], fil, fil))
+        }
+        N3DNodeTemplate::SDFUnion => {
+            let sdf1 = evaluator.input_sdf_volume("sdf 1")?;
+            let sdf2 = evaluator.input_sdf_volume("sdf 2")?;
+            evaluator.output_sdf_volume("out", format!("op_union({}, {})", sdf1, sdf2))
         }
     }
 }

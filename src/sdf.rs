@@ -101,4 +101,15 @@ impl SDFBuilder {
 
         ans
     }
+    pub fn build_with(&self, scene: &str) -> String {
+        let mut ans = self.prelude.to_owned();
+        ans.push_str(self.declarations.as_str());
+        ans.push_str(self.definitions.as_str());
+        ans.push_str("float scene(vec3 p) {\n    return ");
+        ans.push_str(scene);
+        ans.push_str(";}\n\n");
+        ans.push_str(self.main.as_str());
+
+        ans
+    }
 }
