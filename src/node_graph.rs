@@ -39,8 +39,8 @@ pub enum MyDataType {
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub enum N3DValueType {
     Scalar { value: f32 },
-    Vec2 { value: nalgebra::Vector2::<f32> },
-    Vec3 { value: nalgebra::Vector3::<f32> },
+    Vec2 { value: nalgebra::Vector2<f32> },
+    Vec3 { value: nalgebra::Vector3<f32> },
 }
 
 impl Default for N3DValueType {
@@ -53,14 +53,14 @@ impl Default for N3DValueType {
 
 impl N3DValueType {
     /// Tries to downcast this value type to a vector
-    pub fn try_to_vec2(self) -> anyhow::Result<nalgebra::Vector2::<f32>> {
+    pub fn try_to_vec2(self) -> anyhow::Result<nalgebra::Vector2<f32>> {
         if let N3DValueType::Vec2 { value } = self {
             Ok(value)
         } else {
             anyhow::bail!("Invalid cast from {:?} to vec2", self)
         }
     }
-    pub fn try_to_vec3(self) -> anyhow::Result<nalgebra::Vector3::<f32>> {
+    pub fn try_to_vec3(self) -> anyhow::Result<nalgebra::Vector3<f32>> {
         if let N3DValueType::Vec3 { value } = self {
             Ok(value)
         } else {
@@ -74,7 +74,6 @@ impl N3DValueType {
             anyhow::bail!("Invalid cast from {:?} to scalar", self)
         }
     }
-
 }
 
 /// NodeTemplate is a mechanism to define node templates. It's what the graph
@@ -92,6 +91,9 @@ pub enum N3DNodeTemplate {
     Vec2ScalarMul,
     NewVec3,
     Vec3Add,
+    Vec3Sub,
+    Vec3Dot,
+    Vec3Cross,
 }
 
 /// The response type is used to encode side-effects produced when drawing a
@@ -154,6 +156,9 @@ impl NodeTemplateTrait for N3DNodeTemplate {
             N3DNodeTemplate::Vec2ScalarMul => "Vec2 Scalar Multiply",
             N3DNodeTemplate::NewVec3 => "New Vec3",
             N3DNodeTemplate::Vec3Add => "Vec3 Add",
+            N3DNodeTemplate::Vec3Sub => "Vec3 Sub",
+            N3DNodeTemplate::Vec3Dot => "Vec3 Dot",
+            N3DNodeTemplate::Vec3Cross => "Vec3 Cross",
         })
     }
 
@@ -163,12 +168,15 @@ impl NodeTemplateTrait for N3DNodeTemplate {
             N3DNodeTemplate::NewScalar
             | N3DNodeTemplate::ScalarAdd
             | N3DNodeTemplate::ScalarSub => vec!["Scalar"],
-            N3DNodeTemplate::NewVec2
-            | N3DNodeTemplate::Vec2Add
-            | N3DNodeTemplate::Vec2Subtract => vec!["Vec2"],
+            N3DNodeTemplate::NewVec2 | N3DNodeTemplate::Vec2Add | N3DNodeTemplate::Vec2Subtract => {
+                vec!["Vec2"]
+            }
             N3DNodeTemplate::Vec2ScalarMul => vec!["Vec2", "Scalar"],
             N3DNodeTemplate::NewVec3
-            | N3DNodeTemplate::Vec3Add => vec!["Vec3"],
+            | N3DNodeTemplate::Vec3Add
+            | N3DNodeTemplate::Vec3Sub
+            | N3DNodeTemplate::Vec3Dot
+            | N3DNodeTemplate::Vec3Cross => vec!["Vec3"],
         }
     }
 
@@ -299,6 +307,21 @@ impl NodeTemplateTrait for N3DNodeTemplate {
                 input_vec3(graph, "v2");
                 output_vec3(graph, "out");
             }
+            N3DNodeTemplate::Vec3Sub => {
+                input_vec3(graph, "v1");
+                input_vec3(graph, "v2");
+                output_vec3(graph, "out");
+            }
+            N3DNodeTemplate::Vec3Dot => {
+                input_vec3(graph, "v1");
+                input_vec3(graph, "v2");
+                output_scalar(graph, "out");
+            }
+            N3DNodeTemplate::Vec3Cross => {
+                input_vec3(graph, "v1");
+                input_vec3(graph, "v2");
+                output_vec3(graph, "out");
+            }
         }
     }
 }
@@ -321,6 +344,9 @@ impl NodeTemplateIter for AllN3DNodeTemplates {
             N3DNodeTemplate::Vec2ScalarMul,
             N3DNodeTemplate::NewVec3,
             N3DNodeTemplate::Vec3Add,
+            N3DNodeTemplate::Vec3Sub,
+            N3DNodeTemplate::Vec3Dot,
+            N3DNodeTemplate::Vec3Cross,
         ]
     }
 }
@@ -550,16 +576,24 @@ pub fn evaluate_node(
             // the graphs, you can come up with your own evaluation semantics!
             populate_output(self.graph, self.outputs_cache, self.node_id, name, value)
         }
-        fn input_vec2(&mut self, name: &str) -> anyhow::Result<nalgebra::Vector2::<f32>> {
+        fn input_vec2(&mut self, name: &str) -> anyhow::Result<nalgebra::Vector2<f32>> {
             self.evaluate_input(name)?.try_to_vec2()
         }
-        fn output_vec2(&mut self, name: &str, value: nalgebra::Vector2::<f32>) -> anyhow::Result<N3DValueType> {
+        fn output_vec2(
+            &mut self,
+            name: &str,
+            value: nalgebra::Vector2<f32>,
+        ) -> anyhow::Result<N3DValueType> {
             self.populate_output(name, N3DValueType::Vec2 { value })
         }
-        fn input_vec3(&mut self, name: &str) -> anyhow::Result<nalgebra::Vector3::<f32>> {
+        fn input_vec3(&mut self, name: &str) -> anyhow::Result<nalgebra::Vector3<f32>> {
             self.evaluate_input(name)?.try_to_vec3()
         }
-        fn output_vec3(&mut self, name: &str, value: nalgebra::Vector3::<f32>) -> anyhow::Result<N3DValueType> {
+        fn output_vec3(
+            &mut self,
+            name: &str,
+            value: nalgebra::Vector3<f32>,
+        ) -> anyhow::Result<N3DValueType> {
             self.populate_output(name, N3DValueType::Vec3 { value })
         }
         fn input_scalar(&mut self, name: &str) -> anyhow::Result<f32> {
@@ -611,13 +645,28 @@ pub fn evaluate_node(
             let x = evaluator.input_scalar("x")?;
             let y = evaluator.input_scalar("y")?;
             let z = evaluator.input_scalar("z")?;
-            evaluator.output_vec3("out", nalgebra::Vector3::new(x,y,z))
+            evaluator.output_vec3("out", nalgebra::Vector3::new(x, y, z))
             //evaluator.output_vec3("out", nalgebra::Vector3::new(1.0, 2.0, 3.0))
         }
         N3DNodeTemplate::Vec3Add => {
             let v1 = evaluator.input_vec3("v1")?;
             let v2 = evaluator.input_vec3("v2")?;
+            evaluator.output_vec3("out", v1 + v2)
+        }
+        N3DNodeTemplate::Vec3Sub => {
+            let v1 = evaluator.input_vec3("v1")?;
+            let v2 = evaluator.input_vec3("v2")?;
             evaluator.output_vec3("out", v1 - v2)
+        }
+        N3DNodeTemplate::Vec3Dot => {
+            let v1 = evaluator.input_vec3("v1")?;
+            let v2 = evaluator.input_vec3("v2")?;
+            evaluator.output_scalar("out", v1.dot(&v2))
+        }
+        N3DNodeTemplate::Vec3Cross => {
+            let v1 = evaluator.input_vec3("v1")?;
+            let v2 = evaluator.input_vec3("v2")?;
+            evaluator.output_vec3("out", v1.cross(&v2))
         }
     }
 }
