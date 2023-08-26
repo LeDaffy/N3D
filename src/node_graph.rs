@@ -3,9 +3,9 @@ use std::{borrow::Cow, collections::HashMap};
 use egui::{self, DragValue, TextStyle};
 use egui_node_graph::*;
 
-type MyGraph = Graph<MyNodeData, MyDataType, N3DValueType>;
+type MyGraph = Graph<N3DNodeData, N3DDataType, N3DValueType>;
 type MyEditorState =
-    GraphEditorState<MyNodeData, MyDataType, N3DValueType, N3DNodeTemplate, MyGraphState>;
+    GraphEditorState<N3DNodeData, N3DDataType, N3DValueType, N3DNodeTemplate, MyGraphState>;
 
 // ========= First, define your user data types =============
 
@@ -13,7 +13,7 @@ type MyEditorState =
 /// store additional information that doesn't live in parameters. For this
 /// example, the node data stores the template (i.e. the "type") of the node.
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
-pub struct MyNodeData {
+pub struct N3DNodeData {
     template: N3DNodeTemplate,
 }
 
@@ -22,10 +22,11 @@ pub struct MyNodeData {
 /// attaching incompatible datatypes.
 #[derive(PartialEq, Eq)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
-pub enum MyDataType {
+pub enum N3DDataType {
     Scalar,
     Vec2,
     Vec3,
+    SDF,
 }
 
 /// In the graph, input parameters can optionally have a constant value. This
@@ -35,12 +36,13 @@ pub enum MyDataType {
 /// this library makes no attempt to check this consistency. For instance, it is
 /// up to the user code in this example to make sure no parameter is created
 /// with a DataType of Scalar and a ValueType of Vec2.
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 pub enum N3DValueType {
     Scalar { value: f32 },
     Vec2 { value: nalgebra::Vector2<f32> },
     Vec3 { value: nalgebra::Vector3<f32> },
+    SDF { value: String },
 }
 
 impl Default for N3DValueType {
@@ -74,6 +76,13 @@ impl N3DValueType {
             anyhow::bail!("Invalid cast from {:?} to scalar", self)
         }
     }
+    pub fn try_to_sdf(self) -> anyhow::Result<String> {
+        if let N3DValueType::SDF { value } = self {
+            Ok(value.clone())
+        } else {
+            anyhow::bail!("Invalid cast from {:?} to scalar", self)
+        }
+    }
 }
 
 /// NodeTemplate is a mechanism to define node templates. It's what the graph
@@ -94,6 +103,8 @@ pub enum N3DNodeTemplate {
     Vec3Sub,
     Vec3Dot,
     Vec3Cross,
+    SDFPosition,
+    SDFTranslate,
 }
 
 /// The response type is used to encode side-effects produced when drawing a
@@ -118,20 +129,22 @@ pub struct MyGraphState {
 // =========== Then, you need to implement some traits ============
 
 // A trait for the data types, to tell the library how to display them
-impl DataTypeTrait<MyGraphState> for MyDataType {
+impl DataTypeTrait<MyGraphState> for N3DDataType {
     fn data_type_color(&self, _user_state: &mut MyGraphState) -> egui::Color32 {
         match self {
-            MyDataType::Scalar => egui::Color32::from_rgb(38, 109, 211),
-            MyDataType::Vec2 => egui::Color32::from_rgb(238, 207, 109),
-            MyDataType::Vec3 => egui::Color32::from_rgb(148, 255, 0),
+            N3DDataType::Scalar => egui::Color32::from_rgb(38, 109, 211),
+            N3DDataType::Vec2 => egui::Color32::from_rgb(238, 207, 109),
+            N3DDataType::Vec3 => egui::Color32::from_rgb(148, 255, 0),
+            N3DDataType::SDF => egui::Color32::from_rgb(99, 99, 199),
         }
     }
 
     fn name(&self) -> Cow<'_, str> {
         match self {
-            MyDataType::Scalar => Cow::Borrowed("scalar"),
-            MyDataType::Vec2 => Cow::Borrowed("vec2"),
-            MyDataType::Vec3 => Cow::Borrowed("vec3"),
+            N3DDataType::Scalar => Cow::Borrowed("scalar"),
+            N3DDataType::Vec2 => Cow::Borrowed("vec2"),
+            N3DDataType::Vec3 => Cow::Borrowed("vec3"),
+            N3DDataType::SDF => Cow::Borrowed("sdf"),
         }
     }
 }
@@ -139,8 +152,8 @@ impl DataTypeTrait<MyGraphState> for MyDataType {
 // A trait for the node kinds, which tells the library how to build new nodes
 // from the templates in the node finder
 impl NodeTemplateTrait for N3DNodeTemplate {
-    type NodeData = MyNodeData;
-    type DataType = MyDataType;
+    type NodeData = N3DNodeData;
+    type DataType = N3DDataType;
     type ValueType = N3DValueType;
     type UserState = MyGraphState;
     type CategoryType = &'static str;
@@ -159,6 +172,8 @@ impl NodeTemplateTrait for N3DNodeTemplate {
             N3DNodeTemplate::Vec3Sub => "Vec3 Sub",
             N3DNodeTemplate::Vec3Dot => "Vec3 Dot",
             N3DNodeTemplate::Vec3Cross => "Vec3 Cross",
+            N3DNodeTemplate::SDFPosition => "SDF Position",
+            N3DNodeTemplate::SDFTranslate => "SDF Translate",
         })
     }
 
@@ -177,6 +192,8 @@ impl NodeTemplateTrait for N3DNodeTemplate {
             | N3DNodeTemplate::Vec3Sub
             | N3DNodeTemplate::Vec3Dot
             | N3DNodeTemplate::Vec3Cross => vec!["Vec3"],
+            N3DNodeTemplate::SDFPosition
+            | N3DNodeTemplate::SDFTranslate => vec!["SDF"],
         }
     }
 
@@ -187,7 +204,7 @@ impl NodeTemplateTrait for N3DNodeTemplate {
     }
 
     fn user_data(&self, _user_state: &mut Self::UserState) -> Self::NodeData {
-        MyNodeData { template: *self }
+        N3DNodeData { template: *self }
     }
 
     fn build_node(
@@ -205,20 +222,33 @@ impl NodeTemplateTrait for N3DNodeTemplate {
             graph.add_input_param(
                 node_id,
                 name.to_string(),
-                MyDataType::Scalar,
+                N3DDataType::Scalar,
                 N3DValueType::Scalar { value: 0.0 },
                 InputParamKind::ConnectionOrConstant,
                 true,
             );
         };
         let output_scalar = |graph: &mut MyGraph, name: &str| {
-            graph.add_output_param(node_id, name.to_string(), MyDataType::Scalar);
+            graph.add_output_param(node_id, name.to_string(), N3DDataType::Scalar);
+        };
+        let input_sdf = |graph: &mut MyGraph, name: &str| {
+            graph.add_input_param(
+                node_id,
+                name.to_string(),
+                N3DDataType::SDF,
+                N3DValueType::SDF { value: "".to_string() },
+                InputParamKind::ConnectionOrConstant,
+                true,
+            );
+        };
+        let output_sdf = |graph: &mut MyGraph, name: &str| {
+            graph.add_output_param(node_id, name.to_string(), N3DDataType::SDF);
         };
         let input_vec2 = |graph: &mut MyGraph, name: &str| {
             graph.add_input_param(
                 node_id,
                 name.to_string(),
-                MyDataType::Vec2,
+                N3DDataType::Vec2,
                 N3DValueType::Vec2 {
                     value: nalgebra::Vector2::new(0.0, 0.0),
                 },
@@ -227,13 +257,13 @@ impl NodeTemplateTrait for N3DNodeTemplate {
             );
         };
         let output_vec2 = |graph: &mut MyGraph, name: &str| {
-            graph.add_output_param(node_id, name.to_string(), MyDataType::Vec2);
+            graph.add_output_param(node_id, name.to_string(), N3DDataType::Vec2);
         };
         let input_vec3 = |graph: &mut MyGraph, name: &str| {
             graph.add_input_param(
                 node_id,
                 name.to_string(),
-                MyDataType::Vec3,
+                N3DDataType::Vec3,
                 N3DValueType::Vec3 {
                     value: nalgebra::Vector3::new(0.0, 0.0, 0.0),
                 },
@@ -242,7 +272,7 @@ impl NodeTemplateTrait for N3DNodeTemplate {
             );
         };
         let output_vec3 = |graph: &mut MyGraph, name: &str| {
-            graph.add_output_param(node_id, name.to_string(), MyDataType::Vec3);
+            graph.add_output_param(node_id, name.to_string(), N3DDataType::Vec3);
         };
 
         match self {
@@ -255,7 +285,7 @@ impl NodeTemplateTrait for N3DNodeTemplate {
                     // retrieve the value. Parameter names should be unique.
                     "A".into(),
                     // The data type for this input. In this case, a scalar
-                    MyDataType::Scalar,
+                    N3DDataType::Scalar,
                     // The value type for this input. We store zero as default
                     N3DValueType::Scalar { value: 0.0 },
                     // The input parameter kind. This allows defining whether a
@@ -322,6 +352,14 @@ impl NodeTemplateTrait for N3DNodeTemplate {
                 input_vec3(graph, "v2");
                 output_vec3(graph, "out");
             }
+            N3DNodeTemplate::SDFPosition => {
+                output_sdf(graph, "out");
+            }
+            N3DNodeTemplate::SDFTranslate => {
+                input_sdf(graph, "sdf");
+                input_vec3(graph, "translation");
+                output_sdf(graph, "out");
+            }
         }
     }
 }
@@ -347,6 +385,8 @@ impl NodeTemplateIter for AllN3DNodeTemplates {
             N3DNodeTemplate::Vec3Sub,
             N3DNodeTemplate::Vec3Dot,
             N3DNodeTemplate::Vec3Cross,
+            N3DNodeTemplate::SDFPosition,
+            N3DNodeTemplate::SDFTranslate,
         ]
     }
 }
@@ -354,14 +394,14 @@ impl NodeTemplateIter for AllN3DNodeTemplates {
 impl WidgetValueTrait for N3DValueType {
     type Response = MyResponse;
     type UserState = MyGraphState;
-    type NodeData = MyNodeData;
+    type NodeData = N3DNodeData;
     fn value_widget(
         &mut self,
         param_name: &str,
         _node_id: NodeId,
         ui: &mut egui::Ui,
         _user_state: &mut MyGraphState,
-        _node_data: &MyNodeData,
+        _node_data: &N3DNodeData,
     ) -> Vec<MyResponse> {
         // This trait is used to tell the library which UI to display for the
         // inline parameter widgets.
@@ -392,16 +432,21 @@ impl WidgetValueTrait for N3DValueType {
                     ui.add(DragValue::new(value));
                 });
             }
+            N3DValueType::SDF { value: _ } => {
+                ui.horizontal(|ui| {
+                    ui.label(param_name);
+                });
+            }
         }
         // This allows you to return your responses from the inline widgets.
         Vec::new()
     }
 }
 impl UserResponseTrait for MyResponse {}
-impl NodeDataTrait for MyNodeData {
+impl NodeDataTrait for N3DNodeData {
     type Response = MyResponse;
     type UserState = MyGraphState;
-    type DataType = MyDataType;
+    type DataType = N3DDataType;
     type ValueType = N3DValueType;
 
     // This method will be called when drawing each node. This allows adding
@@ -413,9 +458,9 @@ impl NodeDataTrait for MyNodeData {
         &self,
         ui: &mut egui::Ui,
         node_id: NodeId,
-        _graph: &Graph<MyNodeData, MyDataType, N3DValueType>,
+        _graph: &Graph<N3DNodeData, N3DDataType, N3DValueType>,
         user_state: &mut Self::UserState,
-    ) -> Vec<NodeResponse<MyResponse, MyNodeData>>
+    ) -> Vec<NodeResponse<MyResponse, N3DNodeData>>
     where
         MyResponse: UserResponseTrait,
     {
@@ -602,6 +647,12 @@ pub fn evaluate_node(
         fn output_scalar(&mut self, name: &str, value: f32) -> anyhow::Result<N3DValueType> {
             self.populate_output(name, N3DValueType::Scalar { value })
         }
+        fn input_sdf(&mut self, name: &str) -> anyhow::Result<String> {
+            self.evaluate_input(name)?.try_to_sdf()
+        }
+        fn output_sdf(&mut self, name: &str, value: String) -> anyhow::Result<N3DValueType> {
+            self.populate_output(name, N3DValueType::SDF { value })
+        }
     }
 
     let node = &graph[node_id];
@@ -668,6 +719,14 @@ pub fn evaluate_node(
             let v2 = evaluator.input_vec3("v2")?;
             evaluator.output_vec3("out", v1.cross(&v2))
         }
+        N3DNodeTemplate::SDFPosition => {
+            evaluator.output_sdf("out", "p".to_string())
+        }
+        N3DNodeTemplate::SDFTranslate => {
+            let sdf = evaluator.input_sdf("sdf")?;
+            let t = evaluator.input_vec3("translation")?;
+            evaluator.output_sdf("out", format!("{} - vec3({}, {}, {})", sdf, t[0], t[1], t[2]))
+        }
     }
 }
 fn populate_output(
@@ -678,7 +737,7 @@ fn populate_output(
     value: N3DValueType,
 ) -> anyhow::Result<N3DValueType> {
     let output_id = graph[node_id].get_output(param_name)?;
-    outputs_cache.insert(output_id, value);
+    outputs_cache.insert(output_id, value.clone());
     Ok(value)
 }
 
@@ -696,7 +755,7 @@ fn evaluate_input(
         // The value was already computed due to the evaluation of some other
         // node. We simply return value from the cache.
         if let Some(other_value) = outputs_cache.get(&other_output_id) {
-            Ok(*other_value)
+            Ok(other_value.clone())
         }
         // This is the first time encountering this node, so we need to
         // recursively evaluate it.
@@ -705,13 +764,13 @@ fn evaluate_input(
             evaluate_node(graph, graph[other_output_id].node, outputs_cache)?;
 
             // Now that we know the value is cached, return it
-            Ok(*outputs_cache
+            Ok(outputs_cache
                 .get(&other_output_id)
-                .expect("Cache should be populated"))
+                .expect("Cache should be populated").clone())
         }
     }
     // No existing connection, take the inline value instead.
     else {
-        Ok(graph[input_id].value)
+        Ok(graph[input_id].value.clone())
     }
 }
