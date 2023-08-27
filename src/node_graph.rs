@@ -118,6 +118,7 @@ pub enum N3DNodeTemplate {
     SDFTranslate,
     SDFBox,
     SDFUnion,
+    SDFViewer,
 }
 
 /// The response type is used to encode side-effects produced when drawing a
@@ -192,6 +193,7 @@ impl NodeTemplateTrait for N3DNodeTemplate {
             N3DNodeTemplate::SDFTranslate => "SDF Translate",
             N3DNodeTemplate::SDFBox => "SDF Box",
             N3DNodeTemplate::SDFUnion => "SDF Union",
+            N3DNodeTemplate::SDFViewer => "SDF Viewer",
         })
     }
 
@@ -213,7 +215,8 @@ impl NodeTemplateTrait for N3DNodeTemplate {
             N3DNodeTemplate::SDFPosition
             | N3DNodeTemplate::SDFTranslate
             | N3DNodeTemplate::SDFBox
-            | N3DNodeTemplate::SDFUnion => vec!["SDF"],
+            | N3DNodeTemplate::SDFUnion
+            | N3DNodeTemplate::SDFViewer => vec!["SDF"],
         }
     }
 
@@ -404,6 +407,9 @@ impl NodeTemplateTrait for N3DNodeTemplate {
                 input_sdf_volume(graph, "sdf 2");
                 output_sdf_volume(graph, "out");
             }
+            N3DNodeTemplate::SDFViewer => {
+                input_sdf_volume(graph, "sdf");
+            }
         }
     }
 }
@@ -433,6 +439,7 @@ impl NodeTemplateIter for AllN3DNodeTemplates {
             N3DNodeTemplate::SDFTranslate,
             N3DNodeTemplate::SDFBox,
             N3DNodeTemplate::SDFUnion,
+            N3DNodeTemplate::SDFViewer,
         ]
     }
 }
@@ -579,7 +586,7 @@ impl NodeGraphExample {
         });
         let graph_response = egui::TopBottomPanel::bottom("node_panel")
             .resizable(true)
-            .min_height(256.0)
+            //.min_height(256.0)
             .show(ctx, |ui| {
                 self.state.draw_graph_editor(
                     ui,
@@ -794,6 +801,12 @@ pub fn evaluate_node(
             let sdf1 = evaluator.input_sdf_volume("sdf 1")?;
             let sdf2 = evaluator.input_sdf_volume("sdf 2")?;
             evaluator.output_sdf_volume("out", format!("op_union({}, {})", sdf1, sdf2))
+        }
+        N3DNodeTemplate::SDFViewer => {
+            if let Ok(node) = evaluator.input_sdf_volume("sdf") {
+                return Ok(N3DValueType::SDFVolume { value: node } );
+            }
+            anyhow::bail!("Viewer node error")
         }
     }
 }
