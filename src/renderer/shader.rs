@@ -2,6 +2,7 @@ use colored::Colorize;
 use gl::{self, types::*};
 use std::ffi::CString;
 
+#[derive(Clone, Debug)]
 pub struct Shader {
     pub id: GLuint,
 }

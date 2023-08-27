@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashMap};
 use egui::{self, DragValue, TextStyle};
 use egui_node_graph::*;
 
-use crate::renderer::shader::Shader;
+use crate::{renderer::shader::Shader, sdf::SDFBuilder};
 
 type MyGraph = Graph<N3DNodeData, N3DDataType, N3DValueType>;
 type MyEditorState =
@@ -578,7 +578,8 @@ impl NodeGraphExample {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
-    pub fn update(&mut self, ctx: &egui::Context) {
+    pub fn update(&mut self, ctx: &egui::Context) -> Option<String> {
+        let mut ret_val: Option<String> = None;
         egui::TopBottomPanel::top("top").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 egui::widgets::global_dark_light_mode_switch(ui);
@@ -611,7 +612,12 @@ impl NodeGraphExample {
         if let Some(node) = self.user_state.active_node {
             if self.state.graph.nodes.contains_key(node) {
                 let text = match evaluate_node(&self.state.graph, node, &mut HashMap::new()) {
-                    Ok(value) => format!("The result is: {:?}", value),
+                    Ok(value) => {
+                        if let N3DValueType::SDFVolume { ref value } = value {
+                            ret_val = Some(value.clone());
+                        }
+                        format!("The result is: {:?}", value)
+                    },
                     Err(err) => format!("Execution error: {}", err),
                 };
                 ctx.debug_painter().text(
@@ -625,6 +631,7 @@ impl NodeGraphExample {
                 self.user_state.active_node = None;
             }
         }
+    ret_val
     }
 }
 

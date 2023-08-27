@@ -87,58 +87,7 @@ impl EngineState {
     }
     pub fn setup(&mut self) {
         let sdf = SDFBuilder::new()
-            .op_new(SDFBuilder::p_box::<String>(None, [0.4, 1.5, 0.5], 0.05))
-            .op_diff_smooth(
-                SDFBuilder::p_cylinder(
-                    Some(SDFBuilder::rotate::<String>(None, [45.0, 0.0, 0.0])),
-                    2.0,
-                    0.25,
-                    0.05,
-                ),
-                0.25,
-            )
-            .op_diff_smooth(
-                SDFBuilder::p_box(
-                    Some(SDFBuilder::translate(
-                        Some(SDFBuilder::rotate::<String>(None, [45.0, 45.0, 0.0])),
-                        [0.5, 0.5, 0.5],
-                    )),
-                    [0.5, 0.5, 0.5],
-                    0.05,
-                ),
-                0.25,
-            )
-            .op_union_smooth(
-                SDFBuilder::p_sphere(
-                    Some(SDFBuilder::translate::<String>(None, [0.5, -0.5, -0.35])),
-                    0.5,
-                ),
-                0.25,
-            )
-            .op_union_smooth(
-                SDFBuilder::p_cylinder(
-                    Some(SDFBuilder::translate(
-                        Some(SDFBuilder::rotate::<String>(None, [0.0, 0.0, -30.0])),
-                        [-0.5, 0.0, 0.0],
-                    )),
-                    1.0,
-                    0.25,
-                    0.05,
-                ),
-                0.25,
-            )
-            .op_union_smooth(
-                SDFBuilder::p_box(
-                    Some(SDFBuilder::translate(
-                        Some(SDFBuilder::rotate::<String>(None, [0.0, 0.0, 0.0])),
-                        [0.0, -0.5, 0.0],
-                    )),
-                    [0.55, 0.45, 0.25],
-                    0.05,
-                ),
-                0.25,
-            )
-            .build();
+            .build_with("sdf_box(p, vec3(1) - vec3(0.125)) - 0.125");
         self.ray_marcher.shader =
             Shader::new(std::include_str!("../res/shaders/ray.vert"), sdf.as_str());
         //println!("=============");
@@ -475,7 +424,39 @@ impl EngineState {
                     .uniform_mat4("persp", &self.camera.persp);
                 let raw_input = self.egui_st.take_egui_input(&window.window);
                 let full_output = self.ctx.run(raw_input, |ctx| {
-                    self.graph.update(ctx);
+                    if let Some(shader) = self.graph.update(ctx) {
+                        println!("{}", shader);
+                        let shader = format!("({})", shader);
+                        let sdf = SDFBuilder::new()
+                            .build_with(shader.as_str());
+                        println!("{}", sdf);
+                        self.ray_marcher.shader =
+                            Shader::new(std::include_str!("../res/shaders/ray.vert"), sdf.as_str());
+                        self.ray_marcher.shader.enable();
+                        self.ray_marcher.shader.uniform_vec2(
+                            "u_resolution",
+                            self.resolution[0],
+                            self.resolution[1],
+                            );
+                        self.ray_marcher.matcap.gen();
+                        self.ray_marcher.matcap.set_unit(gl::TEXTURE15);
+                        self.ray_marcher.matcap.bind().unwrap();
+                        self.ray_marcher.shader.enable();
+                        self.ray_marcher.shader.uniform_f32(
+                            "u_cam_zoom",
+                            (self.camera.pos - self.camera.look_at).magnitude(),
+                            );
+                        self.ray_marcher.shader.uniform_vec2(
+                            "u_resolution",
+                            self.resolution[0],
+                            self.resolution[1],
+                            );
+                        self.ray_marcher.shader.uniform_vec3v(
+                            "u_cam_translation",
+                            &(self.camera.pos - self.camera.look_at),
+                            );
+                        self.ray_marcher.shader.uniform_f32("u_fillet", self.fillet);
+                    }
                     // self.ray_marcher.shader =
                     //     Shader::new(std::include_str!("../res/shaders/ray.vert"), sdf.as_str());
                     egui::SidePanel::new(egui::panel::Side::Right, "Outliner")
