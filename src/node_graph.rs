@@ -118,6 +118,9 @@ pub enum N3DNodeTemplate {
     SDFTranslate,
     SDFBox,
     SDFUnion,
+    SDFSmoothUnion,
+    SDFDiff,
+    SDFSmoothDiff,
     SDFViewer,
 }
 
@@ -193,6 +196,9 @@ impl NodeTemplateTrait for N3DNodeTemplate {
             N3DNodeTemplate::SDFTranslate => "SDF Translate",
             N3DNodeTemplate::SDFBox => "SDF Box",
             N3DNodeTemplate::SDFUnion => "SDF Union",
+            N3DNodeTemplate::SDFSmoothUnion => "SDFSmoothUnion",
+            N3DNodeTemplate::SDFDiff => "SDFDiff",
+            N3DNodeTemplate::SDFSmoothDiff => "SDFSmoothDiff",
             N3DNodeTemplate::SDFViewer => "SDF Viewer",
         })
     }
@@ -216,6 +222,9 @@ impl NodeTemplateTrait for N3DNodeTemplate {
             | N3DNodeTemplate::SDFTranslate
             | N3DNodeTemplate::SDFBox
             | N3DNodeTemplate::SDFUnion
+            | N3DNodeTemplate::SDFSmoothUnion
+            | N3DNodeTemplate::SDFDiff
+            | N3DNodeTemplate::SDFSmoothDiff
             | N3DNodeTemplate::SDFViewer => vec!["SDF"],
         }
     }
@@ -407,6 +416,23 @@ impl NodeTemplateTrait for N3DNodeTemplate {
                 input_sdf_volume(graph, "sdf 2");
                 output_sdf_volume(graph, "out");
             }
+            N3DNodeTemplate::SDFSmoothUnion => {
+                input_sdf_volume(graph, "sdf 1");
+                input_sdf_volume(graph, "sdf 2");
+                input_scalar(graph, "fac");
+                output_sdf_volume(graph, "out");
+            }
+            N3DNodeTemplate::SDFDiff => {
+                input_sdf_volume(graph, "sdf 1");
+                input_sdf_volume(graph, "sdf 2");
+                output_sdf_volume(graph, "out");
+            }
+            N3DNodeTemplate::SDFSmoothDiff => {
+                input_sdf_volume(graph, "sdf 1");
+                input_sdf_volume(graph, "sdf 2");
+                input_scalar(graph, "fac");
+                output_sdf_volume(graph, "out");
+            }
             N3DNodeTemplate::SDFViewer => {
                 input_sdf_volume(graph, "sdf");
             }
@@ -439,6 +465,9 @@ impl NodeTemplateIter for AllN3DNodeTemplates {
             N3DNodeTemplate::SDFTranslate,
             N3DNodeTemplate::SDFBox,
             N3DNodeTemplate::SDFUnion,
+            N3DNodeTemplate::SDFSmoothUnion,
+            N3DNodeTemplate::SDFDiff,
+            N3DNodeTemplate::SDFSmoothDiff,
             N3DNodeTemplate::SDFViewer,
         ]
     }
@@ -808,6 +837,23 @@ pub fn evaluate_node(
             let sdf1 = evaluator.input_sdf_volume("sdf 1")?;
             let sdf2 = evaluator.input_sdf_volume("sdf 2")?;
             evaluator.output_sdf_volume("out", format!("op_union({}, {})", sdf1, sdf2))
+        }
+        N3DNodeTemplate::SDFSmoothUnion => {
+            let sdf1 = evaluator.input_sdf_volume("sdf 1")?;
+            let sdf2 = evaluator.input_sdf_volume("sdf 2")?;
+            let fac = evaluator.input_scalar("fac")?;
+            evaluator.output_sdf_volume("out", format!("op_union_smooth({}, {}, {})", sdf1, sdf2, fac))
+        }
+        N3DNodeTemplate::SDFDiff => {
+            let sdf1 = evaluator.input_sdf_volume("sdf 1")?;
+            let sdf2 = evaluator.input_sdf_volume("sdf 2")?;
+            evaluator.output_sdf_volume("out", format!("op_diff({}, {})", sdf1, sdf2))
+        }
+        N3DNodeTemplate::SDFSmoothDiff => {
+            let sdf1 = evaluator.input_sdf_volume("sdf 1")?;
+            let sdf2 = evaluator.input_sdf_volume("sdf 2")?;
+            let fac = evaluator.input_scalar("fac")?;
+            evaluator.output_sdf_volume("out", format!("op_diff_smooth({}, {}, {})", sdf1, sdf2, fac))
         }
         N3DNodeTemplate::SDFViewer => {
             if let Ok(node) = evaluator.input_sdf_volume("sdf") {

@@ -425,11 +425,11 @@ impl EngineState {
                 let raw_input = self.egui_st.take_egui_input(&window.window);
                 let full_output = self.ctx.run(raw_input, |ctx| {
                     if let Some(shader) = self.graph.update(ctx) {
-                        println!("{}", shader);
+                        //println!("{}", shader);
                         let shader = format!("({})", shader);
                         let sdf = SDFBuilder::new()
                             .build_with(shader.as_str());
-                        println!("{}", sdf);
+                        //println!("{}", sdf);
                         self.ray_marcher.shader =
                             Shader::new(std::include_str!("../res/shaders/ray.vert"), sdf.as_str());
                         self.ray_marcher.shader.enable();
