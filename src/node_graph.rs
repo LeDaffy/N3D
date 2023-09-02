@@ -116,7 +116,11 @@ pub enum N3DNodeTemplate {
     Vec3Cross,
     SDFPosition,
     SDFTranslate,
+    SDFRotate,
+    SDFScale,
     SDFBox,
+    SDFSphere,
+    SDFCylinder,
     SDFUnion,
     SDFSmoothUnion,
     SDFDiff,
@@ -194,7 +198,11 @@ impl NodeTemplateTrait for N3DNodeTemplate {
             N3DNodeTemplate::Vec3Cross => "Vec3 Cross",
             N3DNodeTemplate::SDFPosition => "SDF Position",
             N3DNodeTemplate::SDFTranslate => "SDF Translate",
+            N3DNodeTemplate::SDFRotate => "SDF Rotate",
+            N3DNodeTemplate::SDFScale => "SDF Scale",
             N3DNodeTemplate::SDFBox => "SDF Box",
+            N3DNodeTemplate::SDFSphere => "SDF Sphere",
+            N3DNodeTemplate::SDFCylinder => "SDF Cylinder",
             N3DNodeTemplate::SDFUnion => "SDF Union",
             N3DNodeTemplate::SDFSmoothUnion => "SDFSmoothUnion",
             N3DNodeTemplate::SDFDiff => "SDFDiff",
@@ -220,7 +228,11 @@ impl NodeTemplateTrait for N3DNodeTemplate {
             | N3DNodeTemplate::Vec3Cross => vec!["Vec3"],
             N3DNodeTemplate::SDFPosition
             | N3DNodeTemplate::SDFTranslate
+            | N3DNodeTemplate::SDFRotate
+            | N3DNodeTemplate::SDFScale
             | N3DNodeTemplate::SDFBox
+            | N3DNodeTemplate::SDFSphere
+            | N3DNodeTemplate::SDFCylinder
             | N3DNodeTemplate::SDFUnion
             | N3DNodeTemplate::SDFSmoothUnion
             | N3DNodeTemplate::SDFDiff
@@ -405,8 +417,30 @@ impl NodeTemplateTrait for N3DNodeTemplate {
                 input_sdf_position(graph, "sdf position");
                 output_sdf_position(graph, "out");
             }
+            N3DNodeTemplate::SDFRotate => {
+                input_vec3(graph, "rotation");
+                input_sdf_position(graph, "sdf position");
+                output_sdf_position(graph, "out");
+            }
+            N3DNodeTemplate::SDFScale => {
+                input_vec3(graph, "scale");
+                input_sdf_position(graph, "sdf position");
+                output_sdf_position(graph, "out");
+            }
             N3DNodeTemplate::SDFBox => {
                 input_vec3(graph, "dimensions");
+                input_scalar(graph, "fillet");
+                input_sdf_position(graph, "sdf position");
+                output_sdf_volume(graph, "out");
+            }
+            N3DNodeTemplate::SDFSphere => {
+                input_scalar(graph, "radius");
+                input_sdf_position(graph, "sdf position");
+                output_sdf_volume(graph, "out");
+            }
+            N3DNodeTemplate::SDFCylinder => {
+                input_scalar(graph, "radius");
+                input_scalar(graph, "length");
                 input_scalar(graph, "fillet");
                 input_sdf_position(graph, "sdf position");
                 output_sdf_volume(graph, "out");
@@ -463,7 +497,11 @@ impl NodeTemplateIter for AllN3DNodeTemplates {
             N3DNodeTemplate::Vec3Cross,
             N3DNodeTemplate::SDFPosition,
             N3DNodeTemplate::SDFTranslate,
+            N3DNodeTemplate::SDFRotate,
+            N3DNodeTemplate::SDFScale,
             N3DNodeTemplate::SDFBox,
+            N3DNodeTemplate::SDFSphere,
+            N3DNodeTemplate::SDFCylinder,
             N3DNodeTemplate::SDFUnion,
             N3DNodeTemplate::SDFSmoothUnion,
             N3DNodeTemplate::SDFDiff,
@@ -827,11 +865,33 @@ pub fn evaluate_node(
             let sdfp = evaluator.input_sdf_position("sdf position")?;
             evaluator.output_sdf_position("out", format!("{} - vec3({}, {}, {})", sdfp, t[0], t[1], t[2]))
         }
+        N3DNodeTemplate::SDFRotate => {
+            let r = evaluator.input_vec3("rotation")?;
+            let sdfp = evaluator.input_sdf_position("sdf position")?;
+            evaluator.output_sdf_position("out", format!("rotate({}, vec3({}, {}, {}))", sdfp, r[0], r[1], r[2]))
+        }
+        N3DNodeTemplate::SDFScale => {
+            let s = evaluator.input_vec3("scale")?;
+            let sdfp = evaluator.input_sdf_position("sdf position")?;
+            evaluator.output_sdf_position("out", format!("scale({}, vec3({}, {}, {}))", sdfp, s[0], s[1], s[2]))
+        }
         N3DNodeTemplate::SDFBox => {
             let dim = evaluator.input_vec3("dimensions")?;
             let fil = evaluator.input_scalar("fillet")?;
             let pos = evaluator.input_sdf_position("sdf position")?;
             evaluator.output_sdf_volume("out", format!("sdf_box({}, vec3({}, {}, {}) - vec3({})) - {}", pos, dim[0], dim[1], dim[2], fil, fil))
+        }
+        N3DNodeTemplate::SDFSphere => {
+            let rad = evaluator.input_scalar("radius")?;
+            let pos = evaluator.input_sdf_position("sdf position")?;
+            evaluator.output_sdf_volume("out", format!("sdf_sphere({}, {})", pos, rad))
+        }
+        N3DNodeTemplate::SDFCylinder => {
+            let rad = evaluator.input_scalar("radius")?;
+            let len = evaluator.input_scalar("length")?;
+            let fillet = evaluator.input_scalar("fillet")?;
+            let pos = evaluator.input_sdf_position("sdf position")?;
+            evaluator.output_sdf_volume("out", format!("sdf_cylinder({}, {} - {}, {} - {}) - {}", pos, len, fillet, rad, fillet, fillet))
         }
         N3DNodeTemplate::SDFUnion => {
             let sdf1 = evaluator.input_sdf_volume("sdf 1")?;

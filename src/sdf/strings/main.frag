@@ -38,5 +38,6 @@ void main()
     vec4 mat = vec4(xr, xg, xb, 1.0);
     o_color = texture(u_matcap, vec2(t_normals.x, -t_normals.y+1.0));
     o_color = vec4(linear_to_srgb(o_color.x), linear_to_srgb(o_color.y), linear_to_srgb(o_color.z), 1.0);
+    o_color = vec4(t_normals, 1.0);
 }
 

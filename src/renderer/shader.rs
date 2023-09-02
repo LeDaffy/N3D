@@ -109,12 +109,60 @@ impl Shader {
         Self::print_shader_link(id);
 
         unsafe {
+            gl::DetachShader(id, vs);
+            gl::DetachShader(id, fs);
             gl::DeleteShader(vs);
             gl::DeleteShader(fs);
         }
         Shader { id: id }
     }
 
+    pub fn recompile(&mut self, vs: &str, fs: &str) {
+        self.delete();
+        let vs_source = CString::new(vs).unwrap();
+        let vs = unsafe { gl::CreateShader(gl::VERTEX_SHADER) };
+
+        unsafe {
+            gl::ShaderSource(
+                vs,
+                1,
+                &(vs_source.as_ptr()) as *const *const GLchar,
+                std::ptr::null(),
+            );
+            gl::CompileShader(vs);
+        }
+        Self::print_shader_compilation(vs, "internal shader");
+
+        let fs_source = CString::new(fs).unwrap();
+        let fs = unsafe { gl::CreateShader(gl::FRAGMENT_SHADER) };
+
+        unsafe {
+            gl::ShaderSource(
+                fs,
+                1,
+                &(fs_source.as_ptr()) as *const *const GLchar,
+                std::ptr::null(),
+            );
+            gl::CompileShader(fs);
+        }
+        Self::print_shader_compilation(fs,  "internal shader");
+
+        // shader Program
+        self.id = unsafe { gl::CreateProgram() };
+        unsafe {
+            gl::AttachShader(self.id, vs);
+            gl::AttachShader(self.id, fs);
+            gl::LinkProgram(self.id);
+        }
+        Self::print_shader_link(self.id);
+
+        unsafe {
+            gl::DetachShader(self.id, vs);
+            gl::DetachShader(self.id, fs);
+            gl::DeleteShader(vs);
+            gl::DeleteShader(fs);
+        }
+    }
     pub fn new(vs: &str, fs: &str) -> Shader {
         let vs_source = CString::new(vs).unwrap();
         let vs = unsafe { gl::CreateShader(gl::VERTEX_SHADER) };
@@ -154,6 +202,8 @@ impl Shader {
         Self::print_shader_link(id);
 
         unsafe {
+            gl::DetachShader(id, vs);
+            gl::DetachShader(id, fs);
             gl::DeleteShader(vs);
             gl::DeleteShader(fs);
         }
@@ -221,6 +271,11 @@ impl Shader {
                 }
             });
             println!("");
+        }
+    }
+    pub fn delete(&mut self) {
+        unsafe {
+            gl::DeleteProgram(self.id);
         }
     }
 }

@@ -425,20 +425,19 @@ impl EngineState {
                 let raw_input = self.egui_st.take_egui_input(&window.window);
                 let full_output = self.ctx.run(raw_input, |ctx| {
                     if let Some(shader) = self.graph.update(ctx) {
-                        //println!("{}", shader);
-                        let shader = format!("({})", shader);
+                        ////println!("{}", shader);
+                        //let shader = format!("({})", shader);
                         let sdf = SDFBuilder::new()
                             .build_with(shader.as_str());
-                        //println!("{}", sdf);
-                        self.ray_marcher.shader =
-                            Shader::new(std::include_str!("../res/shaders/ray.vert"), sdf.as_str());
+                        ////println!("{}", sdf);
+                        self.ray_marcher.shader.recompile(std::include_str!("../res/shaders/ray.vert"), sdf.as_str());
                         self.ray_marcher.shader.enable();
                         self.ray_marcher.shader.uniform_vec2(
                             "u_resolution",
                             self.resolution[0],
                             self.resolution[1],
                             );
-                        self.ray_marcher.matcap.gen();
+                        //self.ray_marcher.matcap.gen();
                         self.ray_marcher.matcap.set_unit(gl::TEXTURE15);
                         self.ray_marcher.matcap.bind().unwrap();
                         self.ray_marcher.shader.enable();
